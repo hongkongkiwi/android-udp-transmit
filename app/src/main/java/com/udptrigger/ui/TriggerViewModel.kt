@@ -951,7 +951,7 @@ class TriggerViewModel(
     }
 
     /**
-     * Update an existing custom preset
+     * Update an existing custom preset (with current config)
      */
     fun updatePreset(oldName: String, name: String, description: String = ""): Boolean {
         val preset = com.udptrigger.data.CustomPreset(
@@ -968,10 +968,37 @@ class TriggerViewModel(
     }
 
     /**
+     * Update name and description of an existing custom preset (keeping preset values)
+     */
+    fun updatePresetMetadata(oldName: String, newName: String, description: String): Boolean {
+        val oldPreset = com.udptrigger.data.PresetsManager.customPresets.value.find { it.name == oldName }
+            ?: return false
+
+        val updatedPreset = com.udptrigger.data.CustomPreset(
+            name = newName,
+            description = description,
+            host = oldPreset.host,
+            port = oldPreset.port,
+            packetContent = oldPreset.packetContent,
+            hexMode = oldPreset.hexMode,
+            includeTimestamp = oldPreset.includeTimestamp,
+            includeBurstIndex = oldPreset.includeBurstIndex
+        )
+        return com.udptrigger.data.PresetsManager.updateCustomPreset(context, oldName, updatedPreset)
+    }
+
+    /**
      * Delete a custom preset
      */
     fun deletePreset(name: String): Boolean {
         return com.udptrigger.data.PresetsManager.deleteCustomPreset(context, name)
+    }
+
+    /**
+     * Get a specific preset by name
+     */
+    fun getPreset(name: String): com.udptrigger.data.CustomPreset? {
+        return com.udptrigger.data.PresetsManager.customPresets.value.find { it.name == name }
     }
 
     /**

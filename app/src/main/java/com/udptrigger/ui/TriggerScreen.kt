@@ -158,8 +158,10 @@ fun TriggerScreen(
                         triggerViewModel.updatePacketOptions(hexMode, includeTs, includeBurstIndex)
                     },
                     onSavePreset = { name, description -> triggerViewModel.saveAsPreset(name, description) },
+                    onUpdatePreset = { oldName, newName, description -> triggerViewModel.updatePresetMetadata(oldName, newName, description) },
                     onDeletePreset = { name -> triggerViewModel.deletePreset(name) },
                     onIsCustomPreset = { name -> triggerViewModel.isCustomPreset(name) },
+                    onGetPreset = { name -> triggerViewModel.getPreset(name) },
                     modifier = Modifier.padding(bottom = 24.dp)
                 )
             }
@@ -608,12 +610,16 @@ fun ConfigSection(
     isConnected: Boolean,
     onPacketOptionsChanged: (Boolean, Boolean, Boolean) -> Unit,
     onSavePreset: (String, String) -> Boolean,
+    onUpdatePreset: (String, String, String) -> Boolean,
     onDeletePreset: (String) -> Boolean,
     onIsCustomPreset: (String) -> Boolean,
+    onGetPreset: (String) -> com.udptrigger.data.CustomPreset?,
     modifier: Modifier = Modifier
 ) {
     var showPresetsMenu by remember { mutableStateOf(false) }
     var showSavePresetDialog by remember { mutableStateOf(false) }
+    var showEditPresetDialog by remember { mutableStateOf(false) }
+    var editingPresetName by remember { mutableStateOf<String?>(null) }
     val presets = com.udptrigger.data.PresetsManager.presets
     var presetName by remember { mutableStateOf("") }
     var presetDescription by remember { mutableStateOf("") }
@@ -674,18 +680,38 @@ fun ConfigSection(
                                                 )
                                             }
                                             if (isCustom) {
-                                                IconButton(
-                                                    onClick = {
-                                                        if (onDeletePreset(preset.name)) {
-                                                            showPresetsMenu = false
+                                                Row {
+                                                    IconButton(
+                                                        onClick = {
+                                                            val presetToEdit = onGetPreset(preset.name)
+                                                            if (presetToEdit != null) {
+                                                                editingPresetName = preset.name
+                                                                presetName = presetToEdit.name
+                                                                presetDescription = presetToEdit.description
+                                                                showPresetsMenu = false
+                                                                showEditPresetDialog = true
+                                                            }
                                                         }
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Info,
+                                                            contentDescription = "Edit preset",
+                                                            tint = MaterialTheme.colorScheme.primary
+                                                        )
                                                     }
-                                                ) {
-                                                    Icon(
-                                                        imageVector = Icons.Default.Delete,
-                                                        contentDescription = "Delete preset",
-                                                        tint = MaterialTheme.colorScheme.error
-                                                    )
+                                                    IconButton(
+                                                        onClick = {
+                                                            if (onDeletePreset(preset.name)) {
+                                                                showPresetsMenu = false
+                                                            }
+                                                        }
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Delete,
+                                                            contentDescription = "Delete preset",
+                                                            tint = MaterialTheme.colorScheme.error
+                                                        )
+                                                    }
                                                 }
                                             }
                                         }
@@ -943,6 +969,81 @@ fun ConfigSection(
             },
             dismissButton = {
                 TextButton(onClick = { showSavePresetDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    if (showEditPresetDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                showEditPresetDialog = false
+                editingPresetName = null
+            },
+            title = { Text("Edit Preset") },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = presetName,
+                        onValueChange = {
+                            presetName = it
+                            saveErrorMessage = null
+                        },
+                        label = { Text("Preset Name") },
+                        singleLine = true,
+                        isError = saveErrorMessage != null
+                    )
+                    OutlinedTextField(
+                        value = presetDescription,
+                        onValueChange = { presetDescription = it },
+                        label = { Text("Description (optional)") },
+                        singleLine = true
+                    )
+                    if (saveErrorMessage != null) {
+                        Text(
+                            text = saveErrorMessage!!,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                    Text(
+                        text = "Editing: ${editingPresetName ?: "Unknown"}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (presetName.isBlank()) {
+                            saveErrorMessage = "Name cannot be empty"
+                            return@Button
+                        }
+                        val oldName = editingPresetName
+                        if (oldName != null) {
+                            if (!onUpdatePreset(oldName, presetName, presetDescription)) {
+                                saveErrorMessage = "Failed to update preset"
+                                return@Button
+                            }
+                        }
+                        showEditPresetDialog = false
+                        editingPresetName = null
+                    }
+                ) {
+                    Text("Update")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showEditPresetDialog = false
+                        editingPresetName = null
+                    }
+                ) {
                     Text("Cancel")
                 }
             }
@@ -1502,6 +1603,8 @@ fun StatsCard(
     lastTimestamp: Long?,
     onResetStats: () -> Unit
 ) {
+    var showResetDialog by remember { mutableStateOf(false) }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -1523,7 +1626,7 @@ fun StatsCard(
                 )
                 if (totalPacketsSent > 0 || totalPacketsFailed > 0) {
                     TextButton(
-                        onClick = onResetStats,
+                        onClick = { showResetDialog = true },
                         modifier = Modifier.height(32.dp)
                     ) {
                         Text("Reset")
@@ -1576,6 +1679,29 @@ fun StatsCard(
                 }
             }
         }
+    }
+
+    if (showResetDialog) {
+        AlertDialog(
+            onDismissRequest = { showResetDialog = false },
+            title = { Text("Reset Statistics") },
+            text = { Text("Are you sure you want to reset all statistics? This action cannot be undone.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onResetStats()
+                        showResetDialog = false
+                    }
+                ) {
+                    Text("Reset", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showResetDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 
