@@ -173,7 +173,101 @@ fun TriggerScreen(
             // Status indicator
             StatusIndicator(isConnected = state.isConnected, isNetworkAvailable = state.isNetworkAvailable)
 
-            Spacer(modifier = Modifier.height(32.dp))
+            // Packet size indicator
+            val packetSize = triggerViewModel.getPacketSizePreview()
+            val sizeBreakdown = triggerViewModel.getPacketSizeBreakdown()
+            var showSizeBreakdown by remember { mutableStateOf(false) }
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 32.dp)
+                    .clickable { showSizeBreakdown = !showSizeBreakdown },
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer
+                )
+            ) {
+                Column(
+                    modifier = Modifier
+                        .padding(16.dp)
+                        .fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "Packet Size",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                            Text(
+                                text = "${packetSize} bytes",
+                                style = MaterialTheme.typography.headlineSmall,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
+                        Icon(
+                            imageVector = if (showSizeBreakdown) Icons.Default.Close else Icons.Default.Info,
+                            contentDescription = if (showSizeBreakdown) "Hide breakdown" else "Show breakdown",
+                            tint = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.5f)
+                        )
+                    }
+
+                    if (showSizeBreakdown) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        HorizontalDivider(
+                            color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.2f)
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = "Size Breakdown:",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+                            )
+                            SizeBreakdownItem("Content", sizeBreakdown.contentSize, "Base data")
+                            if (sizeBreakdown.separatorSize > 0) {
+                                SizeBreakdownItem("Separators", sizeBreakdown.separatorSize, "Colons/dividers")
+                            }
+                            if (sizeBreakdown.timestampSize > 0) {
+                                SizeBreakdownItem("Timestamp", sizeBreakdown.timestampSize, "Nano time")
+                            }
+                            if (sizeBreakdown.burstIndexSize > 0) {
+                                SizeBreakdownItem("Burst Index", sizeBreakdown.burstIndexSize, "Packet number")
+                            }
+
+                            HorizontalDivider(
+                                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.2f),
+                                modifier = Modifier.padding(vertical = 4.dp)
+                            )
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = "Total",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                                Text(
+                                    text = "${sizeBreakdown.totalSize} bytes",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
 
             // Trigger button - large and easy to press
             if (state.burstMode.enabled) {
@@ -327,6 +421,32 @@ fun AboutDialog(onDismiss: () -> Unit) {
             }
         }
     )
+}
+
+@Composable
+fun SizeBreakdownItem(label: String, size: Int, description: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSecondaryContainer
+            )
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.6f)
+            )
+        }
+        Text(
+            text = "${size}B",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
+        )
+    }
 }
 
 @Composable

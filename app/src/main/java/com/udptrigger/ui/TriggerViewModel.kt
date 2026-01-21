@@ -29,6 +29,15 @@ data class PacketHistoryEntry(
     val errorMessage: String? = null
 )
 
+data class PacketSizeBreakdown(
+    val totalSize: Int,
+    val contentSize: Int,
+    val separatorSize: Int,
+    val timestampSize: Int,
+    val burstIndexSize: Int,
+    val isHexMode: Boolean
+)
+
 data class TriggerState(
     val isConnected: Boolean = false,
     val lastTriggerTime: Long? = null,
@@ -181,6 +190,61 @@ class TriggerViewModel(
 
     fun getPacketSizePreview(): Int {
         return buildPacketMessage(System.nanoTime(), 0).size
+    }
+
+    /**
+     * Get a detailed breakdown of the packet size
+     */
+    fun getPacketSizeBreakdown(): PacketSizeBreakdown {
+        val config = _state.value.config
+        val baseContent = config.packetContent.toByteArray(Charsets.UTF_8)
+
+        var size = baseContent.size
+        var separatorSize = 0
+        var timestampSize = 0
+        var burstIndexSize = 0
+
+        if (config.hexMode) {
+            // Hex mode: bytes depend on hex string length
+            val hexBytes = hexStringToBytes(config.packetContent)
+            size = hexBytes.size
+
+            if (config.includeTimestamp) {
+                // ":" + timestamp in hex
+                val timestampHex = System.nanoTime().toString(16)
+                separatorSize += 1 // ":"
+                timestampSize = timestampHex.toByteArray(Charsets.UTF_8).size
+                size += separatorSize + timestampSize
+            }
+        } else {
+            // Text mode
+            if (config.includeTimestamp && config.includeBurstIndex) {
+                // ":timestamp:index"
+                separatorSize = 2 // two colons
+                timestampSize = System.nanoTime().toString().toByteArray(Charsets.UTF_8).size
+                burstIndexSize = ":0".toByteArray(Charsets.UTF_8).size
+                size += separatorSize + timestampSize + burstIndexSize
+            } else if (config.includeTimestamp) {
+                // ":timestamp"
+                separatorSize = 1
+                timestampSize = System.nanoTime().toString().toByteArray(Charsets.UTF_8).size
+                size += separatorSize + timestampSize
+            } else if (config.includeBurstIndex) {
+                // ":index"
+                separatorSize = 1
+                burstIndexSize = ":0".toByteArray(Charsets.UTF_8).size
+                size += separatorSize + burstIndexSize
+            }
+        }
+
+        return PacketSizeBreakdown(
+            totalSize = size,
+            contentSize = if (config.hexMode) hexStringToBytes(config.packetContent).size else baseContent.size,
+            separatorSize = separatorSize,
+            timestampSize = timestampSize,
+            burstIndexSize = burstIndexSize,
+            isHexMode = config.hexMode
+        )
     }
 
     fun updateHapticFeedback(enabled: Boolean) {
