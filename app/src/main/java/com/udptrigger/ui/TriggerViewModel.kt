@@ -134,6 +134,7 @@ class TriggerViewModel(
     private var lastTriggerNanoTime: Long = 0
     private val soundManager = SoundManager(context)
     private val networkMonitor = NetworkMonitor(context)
+    private val dataManager = com.udptrigger.data.DataManager(context)
 
     private val vibrator: Vibrator? by lazy {
         when {
@@ -741,5 +742,76 @@ class TriggerViewModel(
      */
     fun isCustomPreset(name: String): Boolean {
         return com.udptrigger.data.PresetsManager.isCustomPreset(name)
+    }
+
+    // Import/Export Functionality
+
+    /**
+     * Export all app data to JSON
+     */
+    suspend fun exportData(outputStream: java.io.OutputStream): Result<String> {
+        val settings = com.udptrigger.data.AppSettings(
+            hapticFeedbackEnabled = _state.value.hapticFeedbackEnabled,
+            soundEnabled = _state.value.soundEnabled,
+            rateLimitEnabled = _state.value.rateLimitEnabled,
+            rateLimitMs = _state.value.rateLimitMs,
+            autoReconnect = _state.value.autoReconnect,
+            keepScreenOn = _state.value.keepScreenOn
+        )
+
+        return dataManager.exportData(
+            config = _state.value.config,
+            settings = settings,
+            customPresets = com.udptrigger.data.PresetsManager.customPresets.value,
+            outputStream = outputStream
+        )
+    }
+
+    /**
+     * Import app data from JSON and apply it
+     */
+    suspend fun importData(inputStream: java.io.InputStream): Result<String> {
+        return dataManager.importData(inputStream).fold(
+            onSuccess = { import ->
+                // Apply imported settings
+                _state.value = _state.value.copy(
+                    config = import.config,
+                    hapticFeedbackEnabled = import.settings.hapticFeedbackEnabled,
+                    soundEnabled = import.settings.soundEnabled,
+                    rateLimitEnabled = import.settings.rateLimitEnabled,
+                    rateLimitMs = import.settings.rateLimitMs,
+                    autoReconnect = import.settings.autoReconnect,
+                    keepScreenOn = import.settings.keepScreenOn
+                )
+
+                // Save to DataStore
+                dataStore.saveConfig(import.config)
+                dataStore.saveHapticFeedback(import.settings.hapticFeedbackEnabled)
+                dataStore.saveSoundEnabled(import.settings.soundEnabled)
+                dataStore.saveRateLimit(import.settings.rateLimitEnabled, import.settings.rateLimitMs)
+                dataStore.saveAutoReconnect(import.settings.autoReconnect)
+                dataStore.saveKeepScreenOn(import.settings.keepScreenOn)
+
+                // Import custom presets
+                import.customPresets.forEach { preset ->
+                    com.udptrigger.data.PresetsManager.addCustomPreset(context, preset)
+                }
+
+                Result.success("Import successful: ${import.customPresets.size} presets loaded")
+            },
+            onFailure = { e ->
+                Result.failure(e)
+            }
+        )
+    }
+
+    /**
+     * Export packet history to CSV
+     */
+    suspend fun exportHistoryToCsv(outputStream: java.io.OutputStream): Result<String> {
+        return dataManager.exportHistoryToCsv(
+            history = _state.value.packetHistory,
+            outputStream = outputStream
+        )
     }
 }
