@@ -4,14 +4,17 @@ import android.view.KeyEvent
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.platform.LocalView
-import android.app.Activity
 import android.view.View
 
 /**
  * Callback interface for key events.
  */
 interface KeyEventCallback {
-    fun onKeyPressed(keyCode: Int, timestamp: Long)
+    /**
+     * Called when a key is pressed.
+     * @return true if the event was consumed/handled, false to pass it to other handlers
+     */
+    fun onKeyPressed(keyCode: Int, timestamp: Long): Boolean
 }
 
 /**
@@ -29,20 +32,17 @@ fun KeyEventListener(
             override fun onKey(v: View?, keyCode: Int, event: KeyEvent?): Boolean {
                 if (event?.action == KeyEvent.ACTION_DOWN) {
                     // Use System.nanoTime() for accurate timestamp
-                    onKeyPressed.onKeyPressed(keyCode, System.nanoTime())
-                    return true
+                    val consumed = onKeyPressed.onKeyPressed(keyCode, System.nanoTime())
+                    return consumed
                 }
                 return false
             }
         }
 
-        // Make the root view focusable and request focus
+        // Make the root view focusable for key capture
         view.isFocusable = true
         view.isFocusableInTouchMode = true
         view.setOnKeyListener(callback)
-
-        // Request focus for the view
-        view.requestFocus()
 
         onDispose {
             view.setOnKeyListener(null)

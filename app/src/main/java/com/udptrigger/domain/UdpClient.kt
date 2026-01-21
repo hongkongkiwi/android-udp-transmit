@@ -54,22 +54,17 @@ class UdpClient {
     }
 
     /**
-     * Send a packet with the current timestamp embedded.
-     * Returns the timestamp used for transmission wrapped in a Result.
+     * Close the UDP socket synchronously.
+     * Use this for cleanup in lifecycle methods.
      */
-    suspend fun sendWithTimestamp(): Result<Long> {
-        val timestamp = System.nanoTime()
-        val message = "TRIGGER:$timestamp".toByteArray(Charsets.UTF_8)
-        val sendResult = send(message)
-        return if (sendResult.isSuccess) {
-            Result.success(timestamp)
-        } else {
-            Result.failure(sendResult.exceptionOrNull() ?: Exception("Unknown error"))
-        }
+    fun closeSync() {
+        socket?.close()
+        socket = null
+        targetAddress = null
     }
 
     /**
-     * Close the UDP socket.
+     * Close the UDP socket asynchronously.
      */
     suspend fun close() {
         mutex.withLock {

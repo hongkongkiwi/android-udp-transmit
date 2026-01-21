@@ -7,7 +7,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -30,7 +29,11 @@ fun TriggerScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = if (state.isConnected) Color(0xFF4CAF50) else MaterialTheme.colorScheme.primaryContainer
+                    containerColor = if (state.isConnected) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.primaryContainer
+                    }
                 )
             )
         }
@@ -142,10 +145,12 @@ fun TriggerScreen(
     // Transparent key event listener overlay
     KeyEventListener(
         onKeyPressed = object : KeyEventCallback {
-            override fun onKeyPressed(keyCode: Int, timestamp: Long) {
+            override fun onKeyPressed(keyCode: Int, timestamp: Long): Boolean {
                 if (state.isConnected) {
                     triggerViewModel.triggerWithTimestamp(timestamp)
+                    return true // Consume the event
                 }
+                return false // Don't consume when not connected
             }
         }
     )
@@ -153,6 +158,12 @@ fun TriggerScreen(
 
 @Composable
 fun StatusIndicator(isConnected: Boolean) {
+    val statusColor = if (isConnected) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.error
+    }
+
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center
@@ -161,7 +172,7 @@ fun StatusIndicator(isConnected: Boolean) {
             modifier = Modifier
                 .size(12.dp)
                 .background(
-                    color = if (isConnected) Color(0xFF4CAF50) else Color(0xFFE53935),
+                    color = statusColor,
                     shape = MaterialTheme.shapes.small
                 )
         )
@@ -169,7 +180,7 @@ fun StatusIndicator(isConnected: Boolean) {
         Text(
             text = if (isConnected) "Connected" else "Disconnected",
             style = MaterialTheme.typography.bodyMedium,
-            color = if (isConnected) Color(0xFF4CAF50) else Color(0xFFE53935)
+            color = statusColor
         )
     }
 }
@@ -217,8 +228,8 @@ fun ConfigSection(
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 enabled = !isConnected,
-                isError = !isPortValid && config.port != 0,
-                supportingText = if (!isPortValid && config.port != 0) {
+                isError = !isPortValid,
+                supportingText = if (!isPortValid) {
                     { Text("Port must be 1-65535") }
                 } else null
             )

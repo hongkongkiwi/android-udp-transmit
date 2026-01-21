@@ -23,7 +23,24 @@ data class UdpConfig(
     val port: Int = 5000,
     val packetContent: String = "TRIGGER"
 ) {
-    fun isValid(): Boolean = host.isNotBlank() && port in 1..65535
+    companion object {
+        // Simple IPv4 validation regex
+        private val IPV4_PATTERN = Regex(
+            """^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$"""
+        )
+
+        fun isValidHost(host: String): Boolean {
+            if (host.isBlank()) return false
+            // If it contains dots, it must be a valid IPv4
+            if (host.contains('.')) {
+                return IPV4_PATTERN.matches(host)
+            }
+            // Hostname without dots: alphanumeric and hyphens only
+            return host.matches(Regex("""^[a-zA-Z0-9\-]+$"""))
+        }
+    }
+
+    fun isValid(): Boolean = UdpConfig.isValidHost(host) && port in 1..65535
 }
 
 class TriggerViewModel : ViewModel() {
@@ -38,6 +55,8 @@ class TriggerViewModel : ViewModel() {
     }
 
     fun connect() {
+        if (_state.value.isConnected) return
+
         viewModelScope.launch {
             val config = _state.value.config
             try {
@@ -51,29 +70,8 @@ class TriggerViewModel : ViewModel() {
 
     fun trigger() {
         viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) {
-                udpClient.sendWithTimestamp()
-            }
-            result.fold(
-                onSuccess = { timestamp ->
-                    _state.value = _state.value.copy(
-                        lastTriggerTime = System.currentTimeMillis(),
-                        lastTimestamp = timestamp,
-                        error = null
-                    )
-                },
-                onFailure = { e ->
-                    _state.value = _state.value.copy(
-                        error = "Send failed: ${e.message}"
-                    )
-                }
-            )
-        }
-    }
-
-    fun triggerWithTimestamp(timestamp: Long) {
-        viewModelScope.launch {
-            val message = "${_state.value.config.packetContent}:$timestamp".toByteArray()
+            val timestamp = System.nanoTime()
+            val message = "${_state.value.config.packetContent}:$timestamp".toByteArray(Charsets.UTF_8)
             val result = withContext(Dispatchers.IO) {
                 udpClient.send(message)
             }
@@ -94,15 +92,32 @@ class TriggerViewModel : ViewModel() {
         }
     }
 
-    fun setError(message: String) {
-        _state.value = _state.value.copy(error = message)
-    }
-
-    fun clearError() {
-        _state.value = _state.value.copy(error = null)
+    fun triggerWithTimestamp(timestamp: Long) {
+        viewModelScope.launch {
+            val message = "${_state.value.config.packetContent}:$timestamp".toByteArray(Charsets.UTF_8)
+            val result = withContext(Dispatchers.IO) {
+                udpClient.send(message)
+            }
+            result.fold(
+                onSuccess = {
+                    _state.value = _state.value.copy(
+                        lastTriggerTime = System.currentTimeMillis(),
+                        lastTimestamp = timestamp,
+                        error = null
+                    )
+                },
+                onFailure = { e ->
+                    _state.value = _state.value.copy(
+                        error = "Send failed: ${e.message}"
+                    )
+                }
+            )
+        }
     }
 
     fun disconnect() {
+        if (!_state.value.isConnected) return
+
         viewModelScope.launch {
             udpClient.close()
             _state.value = _state.value.copy(isConnected = false, error = null)
@@ -111,8 +126,6 @@ class TriggerViewModel : ViewModel() {
 
     override fun onCleared() {
         super.onCleared()
-        viewModelScope.launch {
-            udpClient.close()
-        }
+        udpClient.closeSync()
     }
 }

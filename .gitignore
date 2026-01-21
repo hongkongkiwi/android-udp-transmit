@@ -90,3 +90,18 @@ lint-results*.html
 
 # Kotlin
 *.kotlin_module
+
+# Android NDK
+obj/
+
+# Signing files
+*.jks
+*.keystore
+
+# Capture files
+*.hprof
+
+# Backup files
+*~
+*.swp
+*.bak

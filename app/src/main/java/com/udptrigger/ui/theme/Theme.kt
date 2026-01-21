@@ -10,34 +10,19 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
-// Color definitions
-private val Purple500 = Color(0xFF6200EE)
-private val Purple80 = Color(0xFFD0BCFF)
-private val PurpleGrey500 = Color(0xFF625b71)
-private val PurpleGrey80 = Color(0xFFCCC2DC)
-private val Teal500 = Color(0xFF03DAC5)
-private val Teal80 = Color(0xFF018786)
-
 private val DarkColorScheme = darkColorScheme(
-    primary = Purple80,
-    secondary = PurpleGrey80,
-    tertiary = Teal80,
-    background = Color(0xFF121212),
-    surface = Color(0xFF1E1E1E)
+    background = androidx.compose.ui.graphics.Color(0xFF121212),
+    surface = androidx.compose.ui.graphics.Color(0xFF1E1E1E)
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = Purple500,
-    secondary = PurpleGrey500,
-    tertiary = Teal500,
-    background = Color(0xFFFFFBFE),
-    surface = Color(0xFFFFFBFE)
+    background = androidx.compose.ui.graphics.Color(0xFFFFFBFE),
+    surface = androidx.compose.ui.graphics.Color(0xFFFFFBFE)
 )
 
 @Composable
@@ -58,7 +43,8 @@ fun UdpTriggerTheme(
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
-            window.statusBarColor = colorScheme.primary.toArgb()
+            // Use a subtle color that works with dynamic colors
+            window.statusBarColor = colorScheme.primaryContainer.toArgb()
             WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
         }
     }

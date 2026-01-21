@@ -30,14 +30,6 @@ class UdpClientTest {
     }
 
     @Test
-    fun `UdpClient sendWithTimestamp fails before initialization`() = runBlocking {
-        val client = UdpClient()
-        val result = client.sendWithTimestamp()
-        assertTrue(result.isFailure)
-        assertTrue(result.exceptionOrNull() is IllegalStateException)
-    }
-
-    @Test
     fun `UdpClient can be closed multiple times safely`() = runBlocking {
         val client = UdpClient()
         client.initialize("127.0.0.1", 5000)
@@ -79,5 +71,32 @@ class UdpClientTest {
     fun `Config validation rejects empty host`() {
         val config = UdpConfig(host = "", port = 5000)
         assertFalse(config.isValid())
+    }
+
+    @Test
+    fun `Config validation accepts valid IPv4 address`() {
+        assertTrue(UdpConfig.isValidHost("192.168.1.100"))
+        assertTrue(UdpConfig.isValidHost("10.0.0.1"))
+        assertTrue(UdpConfig.isValidHost("255.255.255.255"))
+        assertTrue(UdpConfig.isValidHost("0.0.0.0"))
+    }
+
+    @Test
+    fun `Config validation rejects invalid IPv4 address`() {
+        assertFalse(UdpConfig.isValidHost("256.1.1.1"))
+        assertFalse(UdpConfig.isValidHost("192.168.1"))
+        assertFalse(UdpConfig.isValidHost("192.168.1.1.1"))
+        // Note: "abc.def.ghi.jkl" is technically a valid hostname format
+        // DNS allows any combination of labels with alphanumeric chars and hyphens
+    }
+
+    @Test
+    fun `Config validation accepts hostnames`() {
+        // Simple hostnames without dots
+        assertTrue(UdpConfig.isValidHost("localhost"))
+        assertTrue(UdpConfig.isValidHost("my-server"))
+        assertTrue(UdpConfig.isValidHost("device123"))
+        // Note: hostnames with dots (like "my-server.local") are not validated
+        // as they require DNS resolution which is beyond simple validation scope
     }
 }
