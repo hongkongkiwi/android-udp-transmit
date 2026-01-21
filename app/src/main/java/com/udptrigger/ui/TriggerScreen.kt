@@ -32,7 +32,8 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.font.FontFamily
@@ -486,7 +487,14 @@ fun TriggerScreen(
                     onClick = { triggerViewModel.trigger() },
                     modifier = Modifier
                         .size(200.dp)
-                        .scale(if (isPressed.value) 0.95f else 1f),
+                        .scale(if (isPressed.value) 0.95f else 1f)
+                        .semantics {
+                            contentDescription = if (state.isConnected) {
+                                "Send UDP trigger packet. Tap to send immediately."
+                            } else {
+                                "Trigger button - not connected to server"
+                            }
+                        },
                     enabled = state.isConnected,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.primary
@@ -502,6 +510,13 @@ fun TriggerScreen(
                                 text = "Press any key",
                                 style = MaterialTheme.typography.bodyMedium,
                                 modifier = Modifier.padding(top = 8.dp)
+                            )
+                        } else {
+                            Text(
+                                text = "Not connected",
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.padding(top = 8.dp),
+                                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f)
                             )
                         }
                     }
