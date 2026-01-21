@@ -1,36 +1,69 @@
 package com.udptrigger.domain
 
+import android.content.Context
+import android.media.AudioAttributes
 import android.media.SoundPool
+import android.media.ToneGenerator
 import android.os.Build
 
-class SoundManager(@Suppress("UNUSED_PARAMETER") context: android.content.Context) {
+/**
+ * Manages sound effects for trigger feedback.
+ * Uses ToneGenerator for low-latency click sounds.
+ */
+class SoundManager(context: Context) {
 
-    private val soundPool: SoundPool = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-        SoundPool.Builder().setMaxStreams(1).build()
-    } else {
-        @Suppress("DEPRECATION")
-        SoundPool(1, android.media.AudioManager.STREAM_NOTIFICATION, 0)
-    }
-
-    private var clickSoundId: Int = -1
+    // We use ToneGenerator for immediate sound feedback without resource loading
+    private var toneGenerator: ToneGenerator? = null
 
     init {
-        // Load a simple click sound - using 0 as placeholder (no sound loaded)
-        // In a production app, you would load custom sounds from resources
-        // For now we'll use the system's default click sound via SoundPool
-        clickSoundId = 0
+        // ToneGenerator is created lazily to avoid AudioFocus issues
     }
 
+    /**
+     * Play a click sound for trigger feedback
+     * Uses ToneGenerator for minimal latency
+     */
     fun playClickSound() {
-        // Play system default click sound using ToneGenerator instead
-        val toneGenerator = android.media.ToneGenerator(
-            android.media.AudioManager.STREAM_NOTIFICATION,
-            50
-        )
-        toneGenerator.startTone(android.media.ToneGenerator.TONE_PROP_BEEP)
+        try {
+            // Create ToneGenerator on first use or reuse existing
+            val tg = toneGenerator ?: ToneGenerator(
+                android.media.AudioManager.STREAM_NOTIFICATION,
+                50 // Volume
+            ).also {
+                toneGenerator = it
+            }
+
+            // Play a short click tone
+            tg.startTone(ToneGenerator.TONE_PROP_BEEP, 50)
+        } catch (e: Exception) {
+            // Silently fail if audio is not available
+        }
     }
 
+    /**
+     * Play a success sound (e.g., after successful connection)
+     */
+    fun playSuccessSound() {
+        try {
+            val tg = toneGenerator ?: ToneGenerator(
+                android.media.AudioManager.STREAM_NOTIFICATION,
+                50
+            ).also {
+                toneGenerator = it
+            }
+
+            // Play a two-tone success sound
+            tg.startTone(ToneGenerator.TONE_PROP_ACK, 100)
+        } catch (e: Exception) {
+            // Silently fail
+        }
+    }
+
+    /**
+     * Release all resources
+     */
     fun release() {
-        soundPool.release()
+        toneGenerator?.release()
+        toneGenerator = null
     }
 }

@@ -186,6 +186,9 @@ fun TriggerScreen(
                     onAutoConnectOnStartupChanged = { triggerViewModel.updateAutoConnectOnStartup(it) },
                     keepScreenOn = state.keepScreenOn,
                     onKeepScreenOnChanged = { triggerViewModel.updateKeepScreenOn(it) },
+                    wakeLockEnabled = state.wakeLockEnabled,
+                    isWakeLockActive = state.isWakeLockActive,
+                    onWakeLockChanged = { triggerViewModel.updateWakeLockEnabled(it) },
                     burstModeEnabled = state.burstMode.enabled,
                     burstPacketCount = state.burstMode.packetCount,
                     burstDelayMs = state.burstMode.delayMs,
@@ -279,6 +282,62 @@ fun TriggerScreen(
 
             // Status indicator
             StatusIndicator(isConnected = state.isConnected, isNetworkAvailable = state.isNetworkAvailable)
+
+            // Latency indicator (only show when connected and has data)
+            if (state.isConnected && (state.lastSendLatencyMs > 0 || state.averageLatencyMs > 0)) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 32.dp, vertical = 8.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = when {
+                            state.averageLatencyMs < 1.0 -> MaterialTheme.colorScheme.primaryContainer
+                            state.averageLatencyMs < 5.0 -> MaterialTheme.colorScheme.secondaryContainer
+                            else -> MaterialTheme.colorScheme.tertiaryContainer
+                        }
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .padding(16.dp)
+                            .fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "Send Latency",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Last: ${"%.2f".format(state.lastSendLatencyMs)}ms",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                                Text(
+                                    text = "Avg: ${"%.2f".format(state.averageLatencyMs)}ms",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = "Latency indicator",
+                            tint = when {
+                                state.averageLatencyMs < 1.0 -> MaterialTheme.colorScheme.primary
+                                state.averageLatencyMs < 5.0 -> MaterialTheme.colorScheme.secondary
+                                else -> MaterialTheme.colorScheme.tertiary
+                            }
+                        )
+                    }
+                }
+            }
 
             // Packet size indicator
             val packetSize = triggerViewModel.getPacketSizePreview()
@@ -487,7 +546,7 @@ fun TriggerScreen(
         onKeyPressed = object : KeyEventCallback {
             override fun onKeyPressed(keyCode: Int, timestamp: Long): Boolean {
                 if (state.isConnected) {
-                    triggerViewModel.triggerWithTimestamp(timestamp)
+                    triggerViewModel.triggerFast(timestamp)
                     return true
                 }
                 return false
@@ -1076,6 +1135,9 @@ fun SettingsSection(
     onAutoConnectOnStartupChanged: (Boolean) -> Unit,
     keepScreenOn: Boolean,
     onKeepScreenOnChanged: (Boolean) -> Unit,
+    wakeLockEnabled: Boolean,
+    isWakeLockActive: Boolean,
+    onWakeLockChanged: (Boolean) -> Unit,
     burstModeEnabled: Boolean,
     burstPacketCount: Int,
     burstDelayMs: Long,
@@ -1218,6 +1280,39 @@ fun SettingsSection(
                 Switch(
                     checked = keepScreenOn,
                     onCheckedChange = onKeepScreenOnChanged
+                )
+            }
+
+            HorizontalDivider()
+
+            // Wake lock toggle
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Wake Lock (Low Latency)",
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    Text(
+                        text = if (isWakeLockActive) {
+                            "Active - CPU stays on for minimal latency"
+                        } else {
+                            "Keep CPU running for lowest latency (uses more battery)"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (isWakeLockActive) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+                        }
+                    )
+                }
+                Switch(
+                    checked = wakeLockEnabled,
+                    onCheckedChange = onWakeLockChanged
                 )
             }
 

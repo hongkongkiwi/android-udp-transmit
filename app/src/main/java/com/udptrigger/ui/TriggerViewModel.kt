@@ -13,6 +13,7 @@ import com.udptrigger.data.SettingsDataStore
 import com.udptrigger.domain.NetworkMonitor
 import com.udptrigger.domain.SoundManager
 import com.udptrigger.domain.UdpClient
+import com.udptrigger.domain.WakeLockManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -76,10 +77,14 @@ data class TriggerState(
     val autoReconnect: Boolean = false,
     val autoConnectOnStartup: Boolean = false,
     val keepScreenOn: Boolean = false,
+    val wakeLockEnabled: Boolean = false,
+    val isWakeLockActive: Boolean = false,
     val isNetworkAvailable: Boolean = true,
     val burstMode: BurstMode = BurstMode(),
     val scheduledTrigger: ScheduledTrigger = ScheduledTrigger(),
-    val lastTriggered: Long = 0
+    val lastTriggered: Long = 0,
+    val lastSendLatencyMs: Double = 0.0,
+    val averageLatencyMs: Double = 0.0
 )
 
 data class ScheduledTrigger(
@@ -147,10 +152,15 @@ class TriggerViewModel(
     private val soundManager = SoundManager(context)
     private val networkMonitor = NetworkMonitor(context)
     private val dataManager = com.udptrigger.data.DataManager(context)
+    private val wakeLockManager = WakeLockManager(context)
 
     // Variable counter for sequences
     private var packetSequence: Int = 0
     private var sessionPacketsSent: Int = 0
+
+    // Latency tracking
+    private var latencySumMs: Double = 0.0
+    private var latencyCount: Int = 0
 
     private val vibrator: Vibrator? by lazy {
         when {
@@ -188,7 +198,8 @@ class TriggerViewModel(
                     rateLimitMs = savedSettings.rateLimitMs,
                     autoReconnect = savedSettings.autoReconnect,
                     autoConnectOnStartup = savedSettings.autoConnectOnStartup,
-                    keepScreenOn = savedSettings.keepScreenOn
+                    keepScreenOn = savedSettings.keepScreenOn,
+                    wakeLockEnabled = savedSettings.wakeLockEnabled
                 )
 
                 // Auto-connect on startup if enabled
@@ -337,12 +348,45 @@ class TriggerViewModel(
         }
     }
 
+    fun updateWakeLockEnabled(enabled: Boolean) {
+        _state.value = _state.value.copy(wakeLockEnabled = enabled)
+        viewModelScope.launch {
+            dataStore.saveWakeLockEnabled(enabled)
+            // Auto-acquire/release when connected/disconnected
+            if (enabled && _state.value.isConnected) {
+                acquireWakeLock()
+            } else if (!enabled) {
+                releaseWakeLock()
+            }
+        }
+    }
+
+    private fun acquireWakeLock() {
+        if (_state.value.wakeLockEnabled && !_state.value.isWakeLockActive) {
+            if (wakeLockManager.acquire()) {
+                _state.value = _state.value.copy(isWakeLockActive = true)
+            }
+        }
+    }
+
+    private fun releaseWakeLock() {
+        if (_state.value.isWakeLockActive) {
+            wakeLockManager.release()
+            _state.value = _state.value.copy(isWakeLockActive = false)
+        }
+    }
+
     fun clearHistory() {
         _state.value = _state.value.copy(
             packetHistory = emptyList(),
             totalPacketsSent = 0,
-            totalPacketsFailed = 0
+            totalPacketsFailed = 0,
+            lastSendLatencyMs = 0.0,
+            averageLatencyMs = 0.0
         )
+        // Reset latency tracking
+        latencySumMs = 0.0
+        latencyCount = 0
     }
 
     fun applyPreset(presetName: String) {
@@ -678,6 +722,93 @@ class TriggerViewModel(
         }
     }
 
+    /**
+     * LOW-LATENCY trigger path.
+     * This bypasses coroutine dispatch overhead for minimal delay.
+     * Called from key event handler to send UDP packet as fast as possible.
+     *
+     * Optimizations:
+     * - No coroutine launch before send (synchronous call)
+     * - No mutex lock (using pre-allocated buffer)
+     * - State updates deferred to background coroutine after send
+     *
+     * @param timestamp The nanosecond timestamp from the key event
+     * @return The send completion timestamp (nanos), or -1 if rate limited
+     */
+    fun triggerFast(timestamp: Long): Long {
+        // Rate limit check (synchronous, very fast)
+        if (!checkRateLimit()) {
+            return -1L
+        }
+
+        // Update last trigger time for rate limiting
+        lastTriggerNanoTime = timestamp
+
+        // Build packet message
+        val message = buildPacketMessage(timestamp, 0)
+
+        // SEND IMMEDIATELY without coroutine overhead
+        val sendCompleteTime = udpClient.sendFast(message)
+        val success = sendCompleteTime > 0
+
+        // Calculate latency in milliseconds
+        val latencyMs = if (success) {
+            (sendCompleteTime - timestamp) / 1_000_000.0 // Convert nanos to millis
+        } else {
+            0.0
+        }
+
+        // Update latency tracking
+        if (success && latencyMs > 0) {
+            latencySumMs += latencyMs
+            latencyCount++
+        }
+
+        // Defer all state updates to background coroutine
+        viewModelScope.launch {
+            if (success) {
+                // Haptic and sound feedback (non-critical)
+                triggerHapticFeedback()
+                playSoundEffect()
+
+                // Update state asynchronously
+                val newEntry = PacketHistoryEntry(
+                    timestamp = System.currentTimeMillis(),
+                    nanoTime = timestamp,
+                    success = true,
+                    type = PacketType.SENT
+                )
+                val updatedHistory = (listOf(newEntry) + _state.value.packetHistory).take(100)
+                _state.value = _state.value.copy(
+                    lastTriggerTime = System.currentTimeMillis(),
+                    lastTimestamp = timestamp,
+                    lastTriggered = System.currentTimeMillis(),
+                    lastSendLatencyMs = latencyMs,
+                    averageLatencyMs = if (latencyCount > 0) latencySumMs / latencyCount else 0.0,
+                    error = null,
+                    packetHistory = updatedHistory,
+                    totalPacketsSent = _state.value.totalPacketsSent + 1
+                )
+            } else {
+                val newEntry = PacketHistoryEntry(
+                    timestamp = System.currentTimeMillis(),
+                    nanoTime = timestamp,
+                    success = false,
+                    errorMessage = "Send failed",
+                    type = PacketType.SENT
+                )
+                val updatedHistory = (listOf(newEntry) + _state.value.packetHistory).take(100)
+                _state.value = _state.value.copy(
+                    error = "Send failed",
+                    packetHistory = updatedHistory,
+                    totalPacketsFailed = _state.value.totalPacketsFailed + 1
+                )
+            }
+        }
+
+        return sendCompleteTime
+    }
+
     fun connect() {
         if (_state.value.isConnected) return
 
@@ -686,6 +817,8 @@ class TriggerViewModel(
             try {
                 udpClient.initialize(config.host, config.port)
                 _state.value = _state.value.copy(isConnected = true, error = null)
+                // Acquire wake lock if enabled
+                acquireWakeLock()
             } catch (e: Exception) {
                 _state.value = _state.value.copy(error = "Connection failed: ${e.message}")
             }
@@ -696,6 +829,8 @@ class TriggerViewModel(
         if (!_state.value.isConnected) return
 
         viewModelScope.launch {
+            // Release wake lock before disconnecting
+            releaseWakeLock()
             udpClient.close()
             _state.value = _state.value.copy(isConnected = false, error = null)
         }
@@ -926,6 +1061,7 @@ class TriggerViewModel(
         scheduledTriggerJob?.cancel()
         udpClient.closeSync()
         soundManager.release()
+        wakeLockManager.cleanup()
     }
 
     // Custom Preset Management

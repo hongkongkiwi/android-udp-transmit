@@ -23,6 +23,9 @@ class UdpClient {
     private var targetAddress: InetAddress? = null
     private var targetPort: Int = 0
 
+    // Pre-allocated packet for low-latency sending
+    private var preallocatedPacket: DatagramPacket? = null
+
     private val mutex = Mutex()
 
     // Channel for received packets in listen mode
@@ -192,6 +195,43 @@ class UdpClient {
     }
 
     /**
+     * FAST-PATH send for minimal latency.
+     * This bypasses the mutex and coroutine overhead for the critical trigger path.
+     * Thread-safe for single-threaded sends (which is our use case).
+     *
+     * IMPORTANT: This must only be called from the same thread that handles key events
+     * to avoid race conditions. The ViewModel ensures this by calling from key event handler.
+     *
+     * @param data The packet data to send (will be copied into pre-allocated buffer)
+     * @return The timestamp (nanos) when send completed, or -1 on error
+     */
+    fun sendFast(data: ByteArray): Long {
+        try {
+            val sock = socket ?: return -1L
+            val address = targetAddress ?: return -1L
+
+            // Reuse pre-allocated packet or create new one
+            var packet = preallocatedPacket
+            if (packet == null || packet.data.size < data.size) {
+                val buffer = ByteArray(data.size.coerceAtLeast(256))
+                packet = DatagramPacket(buffer, data.size, address, targetPort)
+                preallocatedPacket = packet
+            } else {
+                // Copy data into pre-allocated buffer
+                System.arraycopy(data, 0, packet.data, 0, data.size)
+                packet.length = data.size
+                packet.address = address
+                packet.port = targetPort
+            }
+
+            sock.send(packet)
+            return System.nanoTime()
+        } catch (e: Exception) {
+            return -1L
+        }
+    }
+
+    /**
      * Send a UDP packet to a specific address and port (useful for responding).
      */
     suspend fun sendTo(data: ByteArray, address: InetAddress, port: Int): Result<Unit> {
@@ -232,6 +272,7 @@ class UdpClient {
         socket?.close()
         socket = null
         targetAddress = null
+        preallocatedPacket = null
     }
 
     /**
@@ -244,6 +285,7 @@ class UdpClient {
             socket?.close()
             socket = null
             targetAddress = null
+            preallocatedPacket = null
         }
     }
 }
