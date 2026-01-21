@@ -136,6 +136,10 @@ class TriggerViewModel(
     private val networkMonitor = NetworkMonitor(context)
     private val dataManager = com.udptrigger.data.DataManager(context)
 
+    // Variable counter for sequences
+    private var packetSequence: Int = 0
+    private var sessionPacketsSent: Int = 0
+
     private val vibrator: Vibrator? by lazy {
         when {
             android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S -> {
@@ -481,7 +485,10 @@ class TriggerViewModel(
 
     private fun buildPacketMessage(timestamp: Long, burstIndex: Int): ByteArray {
         val config = _state.value.config
-        val baseContent = config.packetContent
+        var baseContent = config.packetContent
+
+        // Apply variable replacements
+        baseContent = replaceVariables(baseContent, timestamp, burstIndex)
 
         return when {
             config.hexMode -> {
@@ -507,6 +514,68 @@ class TriggerViewModel(
             }
         }
     }
+
+    /**
+     * Replace variables in the packet content with dynamic values
+     * Supported variables:
+     * {sequence} - Incrementing sequence number
+     * {session_count} - Total packets sent this session
+     * {timestamp_ms} - Current timestamp in milliseconds
+     * {timestamp_s} - Current timestamp in seconds
+     * {random} - Random number 0-9999
+     * {device_id} - Device identifier (first 8 chars of Android ID)
+     * {burst_index} - Current burst index
+     */
+    private fun replaceVariables(content: String, timestamp: Long, burstIndex: Int): String {
+        var result = content
+
+        // Increment sequence for this packet
+        packetSequence++
+        sessionPacketsSent++
+
+        // Sequence number
+        result = result.replace("{sequence}", packetSequence.toString())
+
+        // Session packet count
+        result = result.replace("{session_count}", sessionPacketsSent.toString())
+
+        // Timestamp in milliseconds
+        result = result.replace("{timestamp_ms}", timestamp.toString())
+
+        // Timestamp in seconds
+        result = result.replace("{timestamp_s}", (timestamp / 1_000_000_000).toString())
+
+        // Random number 0-9999
+        result = result.replace("{random}", (0..9999).random().toString())
+
+        // Device ID (first 8 chars of Android ID for privacy)
+        val deviceId = try {
+            android.provider.Settings.Secure.getString(
+                context.contentResolver,
+                android.provider.Settings.Secure.ANDROID_ID
+            ).take(8)
+        } catch (e: Exception) {
+            "UNKNOWN"
+        }
+        result = result.replace("{device_id}", deviceId)
+
+        // Burst index
+        result = result.replace("{burst_index}", burstIndex.toString())
+
+        return result
+    }
+
+    /**
+     * Reset the sequence counter
+     */
+    fun resetSequence() {
+        packetSequence = 0
+    }
+
+    /**
+     * Get current sequence number
+     */
+    fun getSequence(): Int = packetSequence
 
     private fun hexStringToBytes(hex: String): ByteArray {
         // Remove any spaces or newlines
