@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">UDP Trigger</string>
+    <string name="trigger_ready">Press any key to trigger UDP</string>
+    <string name="sending">Sending UDP packet...</string>
+    <string name="sent">Packet sent!</string>
+    <string name="error">Error: %1$s</string>
+    <string name="destination_ip">Destination IP</string>
+    <string name="destination_port">Port</string>
+    <string name="packet_content">Packet Content</string>
+</resources>
