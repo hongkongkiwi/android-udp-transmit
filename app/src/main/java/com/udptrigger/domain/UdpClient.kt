@@ -9,6 +9,7 @@ import kotlinx.coroutines.sync.withLock
 /**
  * Low-latency UDP client for sending trigger packets.
  * Optimized for minimal delay between trigger and transmission.
+ * Supports unicast and broadcast UDP.
  */
 class UdpClient {
 
@@ -21,15 +22,24 @@ class UdpClient {
     /**
      * Initialize the UDP socket with target destination.
      * Pre-resolving the address to minimize latency on send.
+     * @param host Target hostname or IP address (supports 255.255.255.255 for broadcast)
+     * @param port Target UDP port
      */
     suspend fun initialize(host: String, port: Int) {
         mutex.withLock {
             targetAddress = InetAddress.getByName(host)
             targetPort = port
-            // Create socket without timeout for immediate sending
+
+            // Create socket with broadcast enabled if needed
             socket = DatagramSocket().apply {
                 // Disable Nagle's algorithm for lower latency
                 trafficClass = 0x04 // IPTOS_LOWDELAY
+
+                // Enable broadcast if target is broadcast address
+                if (host == "255.255.255.255" || host == "192.168.255.255" ||
+                    host.endsWith(".255") || host.endsWith(".255.255")) {
+                    broadcast = true
+                }
             }
         }
     }

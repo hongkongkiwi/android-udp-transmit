@@ -1,29 +1,111 @@
 package com.udptrigger.ui
 
+import android.content.Context
+import android.view.WindowManager
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import android.app.Activity
+import android.content.ContextWrapper
+
+fun Context.findActivity(): Activity {
+    var context = this
+    while (context is ContextWrapper) {
+        if (context is Activity) return context
+        context = context.baseContext
+    }
+    throw IllegalStateException("Cannot find Activity from context")
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TriggerScreen(
-    triggerViewModel: TriggerViewModel = viewModel()
+    triggerViewModel: TriggerViewModel = viewModel(
+        factory = TriggerViewModelFactory(LocalContext.current)
+    )
 ) {
     val state by triggerViewModel.state.collectAsState()
+    val context = LocalContext.current
+
+    // Keep screen on
+    LaunchedEffect(state.keepScreenOn) {
+        val activity = context.findActivity()
+        if (state.keepScreenOn) {
+            activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
+
     var showConfig by remember { mutableStateOf(false) }
+    var showHistory by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) }
+    var showAbout by remember { mutableStateOf(false) }
+    var showPresets by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("UDP Trigger") },
                 actions = {
+                    // Network status indicator
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp, 24.dp)
+                            .padding(4.dp)
+                            .background(
+                                color = if (state.isNetworkAvailable) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.error
+                                },
+                                shape = MaterialTheme.shapes.small
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = if (state.isNetworkAvailable) "NW" else "X",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
+                    }
+                    IconButton(onClick = { showHistory = !showHistory }) {
+                        Icon(Icons.Default.List, contentDescription = "Packet History")
+                    }
+                    IconButton(onClick = { showSettings = !showSettings }) {
+                        Icon(Icons.Default.Settings, contentDescription = "Settings")
+                    }
+                    IconButton(onClick = { showAbout = true }) {
+                        Icon(Icons.Default.Info, contentDescription = "About")
+                    }
                     TextButton(onClick = { showConfig = !showConfig }) {
                         Text(if (showConfig) "Hide Config" else "Config")
                     }
@@ -53,93 +135,138 @@ fun TriggerScreen(
                     onConfigChange = { triggerViewModel.updateConfig(it) },
                     onConnect = { triggerViewModel.connect() },
                     onDisconnect = { triggerViewModel.disconnect() },
+                    onApplyPreset = { presetName -> triggerViewModel.applyPreset(presetName) },
                     isConnected = state.isConnected,
+                    onPacketOptionsChanged = { hexMode, includeTs, includeBurstIndex ->
+                        triggerViewModel.updatePacketOptions(hexMode, includeTs, includeBurstIndex)
+                    },
+                    onSavePreset = { name, description -> triggerViewModel.saveAsPreset(name, description) },
+                    onDeletePreset = { name -> triggerViewModel.deletePreset(name) },
+                    onIsCustomPreset = { name -> triggerViewModel.isCustomPreset(name) },
+                    modifier = Modifier.padding(bottom = 24.dp)
+                )
+            }
+
+            // Settings section
+            if (showSettings) {
+                SettingsSection(
+                    hapticFeedbackEnabled = state.hapticFeedbackEnabled,
+                    onHapticFeedbackChanged = { triggerViewModel.updateHapticFeedback(it) },
+                    soundEnabled = state.soundEnabled,
+                    onSoundEnabledChanged = { triggerViewModel.updateSoundEnabled(it) },
+                    rateLimitEnabled = state.rateLimitEnabled,
+                    rateLimitMs = state.rateLimitMs,
+                    onRateLimitChanged = { enabled, ms -> triggerViewModel.updateRateLimit(enabled, ms) },
+                    autoReconnect = state.autoReconnect,
+                    onAutoReconnectChanged = { triggerViewModel.updateAutoReconnect(it) },
+                    keepScreenOn = state.keepScreenOn,
+                    onKeepScreenOnChanged = { triggerViewModel.updateKeepScreenOn(it) },
+                    burstModeEnabled = state.burstMode.enabled,
+                    burstPacketCount = state.burstMode.packetCount,
+                    burstDelayMs = state.burstMode.delayMs,
+                    burstIsSending = state.burstMode.isSending,
+                    onBurstModeChanged = { enabled, count, delay -> triggerViewModel.updateBurstMode(enabled, count, delay) },
                     modifier = Modifier.padding(bottom = 24.dp)
                 )
             }
 
             // Status indicator
-            StatusIndicator(isConnected = state.isConnected)
+            StatusIndicator(isConnected = state.isConnected, isNetworkAvailable = state.isNetworkAvailable)
 
             Spacer(modifier = Modifier.height(32.dp))
 
             // Trigger button - large and easy to press
-            Button(
-                onClick = { triggerViewModel.trigger() },
-                modifier = Modifier
-                    .size(200.dp),
-                enabled = state.isConnected,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary
-                )
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = "TRIGGER",
-                        style = MaterialTheme.typography.headlineLarge
-                    )
-                    if (state.isConnected) {
-                        Text(
-                            text = "Press any key",
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.padding(top = 8.dp)
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(32.dp))
-
-            // Last trigger info
-            state.lastTriggerTime?.let { triggerTime ->
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer
-                    )
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+            if (state.burstMode.enabled) {
+                // Burst mode layout
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
+                        Button(
+                            onClick = { triggerViewModel.triggerBurst() },
+                            modifier = Modifier.size(160.dp),
+                            enabled = state.isConnected && !state.burstMode.isSending,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary
+                            )
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = if (state.burstMode.isSending) "SENDING..." else "BURST",
+                                    style = MaterialTheme.typography.headlineMedium
+                                )
+                                Text(
+                                    text = "×${state.burstMode.packetCount}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.padding(top = 4.dp)
+                                )
+                            }
+                        }
+                    }
+                    Text(
+                        text = "${state.burstMode.delayMs}ms delay between packets",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    )
+                }
+            } else {
+                // Single trigger mode
+                Button(
+                    onClick = { triggerViewModel.trigger() },
+                    modifier = Modifier.size(200.dp),
+                    enabled = state.isConnected,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary
+                    )
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
-                            text = "Last Trigger",
-                            style = MaterialTheme.typography.titleMedium
+                            text = "TRIGGER",
+                            style = MaterialTheme.typography.headlineLarge
                         )
-                        Text(
-                            text = "Time: ${triggerTime}",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        state.lastTimestamp?.let { ts ->
+                        if (state.isConnected) {
                             Text(
-                                text = "Timestamp: $ts ns",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+                                text = "Press any key",
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.padding(top = 8.dp)
                             )
                         }
                     }
                 }
             }
 
+            Spacer(modifier = Modifier.height(32.dp))
+
+            // Stats section
+            StatsCard(
+                totalPacketsSent = state.totalPacketsSent,
+                totalPacketsFailed = state.totalPacketsFailed,
+                lastTriggerTime = state.lastTriggerTime,
+                lastTimestamp = state.lastTimestamp,
+                onResetStats = { triggerViewModel.clearHistory() }
+            )
+
+            // History section
+            if (showHistory) {
+                Spacer(modifier = Modifier.height(16.dp))
+                HistorySection(
+                    packetHistory = state.packetHistory,
+                    onClearHistory = { triggerViewModel.clearHistory() }
+                )
+            }
+
             // Error display
             state.error?.let { error ->
                 Spacer(modifier = Modifier.height(16.dp))
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer
-                    )
-                ) {
-                    Text(
-                        text = error,
-                        modifier = Modifier.padding(16.dp),
-                        color = MaterialTheme.colorScheme.onErrorContainer
-                    )
-                }
+                ErrorCard(error)
             }
         }
+    }
+
+    // About dialog
+    if (showAbout) {
+        AboutDialog(onDismiss = { showAbout = false })
     }
 
     // Transparent key event listener overlay
@@ -148,20 +275,72 @@ fun TriggerScreen(
             override fun onKeyPressed(keyCode: Int, timestamp: Long): Boolean {
                 if (state.isConnected) {
                     triggerViewModel.triggerWithTimestamp(timestamp)
-                    return true // Consume the event
+                    return true
                 }
-                return false // Don't consume when not connected
+                return false
             }
         }
     )
 }
 
 @Composable
-fun StatusIndicator(isConnected: Boolean) {
-    val statusColor = if (isConnected) {
-        MaterialTheme.colorScheme.primary
-    } else {
-        MaterialTheme.colorScheme.error
+fun AboutDialog(onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("About UDP Trigger") },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "UDP Trigger v1.0",
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Text(
+                    text = "A low-latency UDP packet sender for Android.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Features:",
+                    style = MaterialTheme.typography.titleSmall
+                )
+                Text("• Ultra-low latency UDP transmission", style = MaterialTheme.typography.bodySmall)
+                Text("• Button and key press triggers", style = MaterialTheme.typography.bodySmall)
+                Text("• IPv4, IPv6, and broadcast support", style = MaterialTheme.typography.bodySmall)
+                Text("• Configurable presets", style = MaterialTheme.typography.bodySmall)
+                Text("• Haptic and sound feedback", style = MaterialTheme.typography.bodySmall)
+                Text("• Auto-reconnect on network changes", style = MaterialTheme.typography.bodySmall)
+                Text("• Packet history and statistics", style = MaterialTheme.typography.bodySmall)
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Perfect for show control, OBS triggering, and network testing.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close")
+            }
+        }
+    )
+}
+
+@Composable
+fun StatusIndicator(isConnected: Boolean, isNetworkAvailable: Boolean) {
+    val statusColor = when {
+        !isNetworkAvailable -> MaterialTheme.colorScheme.error
+        isConnected -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.error
+    }
+
+    val statusText = when {
+        !isNetworkAvailable -> "No Network"
+        isConnected -> "Connected"
+        else -> "Disconnected"
     }
 
     Row(
@@ -178,7 +357,7 @@ fun StatusIndicator(isConnected: Boolean) {
         )
         Spacer(modifier = Modifier.width(8.dp))
         Text(
-            text = if (isConnected) "Connected" else "Disconnected",
+            text = statusText,
             style = MaterialTheme.typography.bodyMedium,
             color = statusColor
         )
@@ -191,9 +370,21 @@ fun ConfigSection(
     onConfigChange: (UdpConfig) -> Unit,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
+    onApplyPreset: (String) -> Unit,
     isConnected: Boolean,
+    onPacketOptionsChanged: (Boolean, Boolean, Boolean) -> Unit,
+    onSavePreset: (String, String) -> Boolean,
+    onDeletePreset: (String) -> Boolean,
+    onIsCustomPreset: (String) -> Boolean,
     modifier: Modifier = Modifier
 ) {
+    var showPresetsMenu by remember { mutableStateOf(false) }
+    var showSavePresetDialog by remember { mutableStateOf(false) }
+    val presets = com.udptrigger.data.PresetsManager.presets
+    var presetName by remember { mutableStateOf("") }
+    var presetDescription by remember { mutableStateOf("") }
+    var saveErrorMessage by remember { mutableStateOf<String?>(null) }
+
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -204,10 +395,96 @@ fun ConfigSection(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            Text(
+                text = "Connection Configuration",
+                style = MaterialTheme.typography.titleMedium
+            )
+
+            // Presets row with Load and Save buttons
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // Load Preset dropdown
+                Box(modifier = Modifier.weight(1f)) {
+                    OutlinedButton(
+                        onClick = { showPresetsMenu = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !isConnected
+                    ) {
+                        Text("Load Preset")
+                    }
+                    DropdownMenu(
+                        expanded = showPresetsMenu,
+                        onDismissRequest = { showPresetsMenu = false }
+                    ) {
+                        presets.forEach { preset ->
+                            val isCustom = onIsCustomPreset(preset.name)
+                            DropdownMenuItem(
+                                text = {
+                                    Column {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = preset.name,
+                                                    style = MaterialTheme.typography.bodyLarge
+                                                )
+                                                Text(
+                                                    text = preset.description,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                                )
+                                            }
+                                            if (isCustom) {
+                                                IconButton(
+                                                    onClick = {
+                                                        if (onDeletePreset(preset.name)) {
+                                                            showPresetsMenu = false
+                                                        }
+                                                    }
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Delete,
+                                                        contentDescription = "Delete preset",
+                                                        tint = MaterialTheme.colorScheme.error
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                },
+                                onClick = {
+                                    onApplyPreset(preset.name)
+                                    showPresetsMenu = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                // Save as Preset button
+                OutlinedButton(
+                    onClick = {
+                        presetName = ""
+                        presetDescription = ""
+                        saveErrorMessage = null
+                        showSavePresetDialog = true
+                    },
+                    modifier = Modifier.weight(1f),
+                    enabled = !isConnected
+                ) {
+                    Text("Save Preset")
+                }
+            }
+
             OutlinedTextField(
                 value = config.host,
                 onValueChange = { onConfigChange(config.copy(host = it)) },
-                label = { Text("Destination IP") },
+                label = { Text("Destination Host (IPv4/IPv6/hostname/broadcast)") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 enabled = !isConnected
@@ -237,10 +514,118 @@ fun ConfigSection(
             OutlinedTextField(
                 value = config.packetContent,
                 onValueChange = { onConfigChange(config.copy(packetContent = it)) },
-                label = { Text("Packet Content") },
+                label = { Text(if (config.hexMode) "Packet Content (Hex)" else "Packet Content (Text)") },
+                placeholder = { Text(if (config.hexMode) "e.g., 48454C4F or Hello" else "e.g., TRIGGER or Hello World") },
                 modifier = Modifier.fillMaxWidth(),
-                singleLine = true
+                singleLine = true,
+                supportingText = {
+                    val preview = if (config.hexMode) {
+                        try {
+                            val bytes = config.packetContent.chunked(2).mapNotNull { it.toIntOrNull(16) }
+                            "Preview: ${bytes.take(8).joinToString(", ") }${if (bytes.size > 8) "..." else ""}"
+                        } catch (e: Exception) {
+                            "Invalid hex: use pairs like 48 45 4C 4C 4F"
+                        }
+                    } else {
+                        "Preview: ${config.packetContent.take(50)}${if (config.packetContent.length > 50) "..." else ""}"
+                    }
+                    Text(preview, style = MaterialTheme.typography.bodySmall)
+                }
             )
+
+            // Packet options
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "Packet Options",
+                    style = MaterialTheme.typography.titleSmall
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Hex Mode",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            text = "Interpret as hex bytes",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                        )
+                    }
+                    Switch(
+                        checked = config.hexMode,
+                        onCheckedChange = { enabled ->
+                            onPacketOptionsChanged(
+                                enabled,
+                                config.includeTimestamp,
+                                config.includeBurstIndex
+                            )
+                        }
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Include Timestamp",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            text = "Add nano timestamp to packet",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                        )
+                    }
+                    Switch(
+                        checked = config.includeTimestamp,
+                        onCheckedChange = { enabled ->
+                            onPacketOptionsChanged(
+                                config.hexMode,
+                                enabled,
+                                config.includeBurstIndex
+                            )
+                        }
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Include Burst Index",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            text = "Add index in burst mode",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                        )
+                    }
+                    Switch(
+                        checked = config.includeBurstIndex,
+                        onCheckedChange = { enabled ->
+                            onPacketOptionsChanged(
+                                config.hexMode,
+                                config.includeTimestamp,
+                                enabled
+                            )
+                        }
+                    )
+                }
+            }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -263,6 +648,538 @@ fun ConfigSection(
                     }
                 }
             }
+        }
+    }
+
+    // Save Preset Dialog
+    if (showSavePresetDialog) {
+        AlertDialog(
+            onDismissRequest = { showSavePresetDialog = false },
+            title = { Text("Save as Preset") },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = presetName,
+                        onValueChange = {
+                            presetName = it
+                            saveErrorMessage = null
+                        },
+                        label = { Text("Preset Name") },
+                        singleLine = true,
+                        isError = saveErrorMessage != null
+                    )
+                    OutlinedTextField(
+                        value = presetDescription,
+                        onValueChange = { presetDescription = it },
+                        label = { Text("Description (optional)") },
+                        singleLine = true
+                    )
+                    if (saveErrorMessage != null) {
+                        Text(
+                            text = saveErrorMessage!!,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                    Text(
+                        text = "Current config: ${config.host}:${config.port}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (presetName.isBlank()) {
+                            saveErrorMessage = "Name cannot be empty"
+                            return@Button
+                        }
+                        if (!onSavePreset(presetName, presetDescription)) {
+                            saveErrorMessage = "Preset with this name already exists"
+                            return@Button
+                        }
+                        showSavePresetDialog = false
+                    }
+                ) {
+                    Text("Save")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSavePresetDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+}
+
+@Composable
+fun SettingsSection(
+    hapticFeedbackEnabled: Boolean,
+    onHapticFeedbackChanged: (Boolean) -> Unit,
+    soundEnabled: Boolean,
+    onSoundEnabledChanged: (Boolean) -> Unit,
+    rateLimitEnabled: Boolean,
+    rateLimitMs: Long,
+    onRateLimitChanged: (Boolean, Long) -> Unit,
+    autoReconnect: Boolean,
+    onAutoReconnectChanged: (Boolean) -> Unit,
+    keepScreenOn: Boolean,
+    onKeepScreenOnChanged: (Boolean) -> Unit,
+    burstModeEnabled: Boolean,
+    burstPacketCount: Int,
+    burstDelayMs: Long,
+    burstIsSending: Boolean,
+    onBurstModeChanged: (Boolean, Int, Long) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = "Settings",
+                style = MaterialTheme.typography.titleMedium
+            )
+
+            // Haptic feedback toggle
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Haptic Feedback",
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    Text(
+                        text = "Vibrate on successful trigger",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+                    )
+                }
+                Switch(
+                    checked = hapticFeedbackEnabled,
+                    onCheckedChange = onHapticFeedbackChanged
+                )
+            }
+
+            HorizontalDivider()
+
+            // Sound effects toggle
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Sound Effects",
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    Text(
+                        text = "Play sound on trigger",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+                    )
+                }
+                Switch(
+                    checked = soundEnabled,
+                    onCheckedChange = onSoundEnabledChanged
+                )
+            }
+
+            HorizontalDivider()
+
+            // Auto-reconnect toggle
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Auto-Reconnect",
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    Text(
+                        text = "Automatically reconnect when network available",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+                    )
+                }
+                Switch(
+                    checked = autoReconnect,
+                    onCheckedChange = onAutoReconnectChanged
+                )
+            }
+
+            HorizontalDivider()
+
+            // Keep screen on toggle
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Keep Screen On",
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    Text(
+                        text = "Prevent screen from turning off",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+                    )
+                }
+                Switch(
+                    checked = keepScreenOn,
+                    onCheckedChange = onKeepScreenOnChanged
+                )
+            }
+
+            HorizontalDivider()
+
+            // Rate limiting
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Rate Limiting",
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                        Text(
+                            text = "Prevent rapid-fire triggers",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+                        )
+                    }
+                    Switch(
+                        checked = rateLimitEnabled,
+                        onCheckedChange = { enabled ->
+                            onRateLimitChanged(enabled, rateLimitMs)
+                        }
+                    )
+                }
+
+                if (rateLimitEnabled) {
+                    var rateLimitText by remember { mutableStateOf(rateLimitMs.toString()) }
+                    OutlinedTextField(
+                        value = rateLimitText,
+                        onValueChange = { value ->
+                            value.toLongOrNull()?.let { ms ->
+                                if (ms in 1..5000) {
+                                    rateLimitText = value
+                                    onRateLimitChanged(true, ms)
+                                }
+                            }
+                        },
+                        label = { Text("Minimum interval (ms)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                    )
+                }
+            }
+
+            HorizontalDivider()
+
+            // Burst mode toggle
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Burst Mode",
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                        Text(
+                            text = "Send multiple packets with delay",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+                        )
+                    }
+                    Switch(
+                        checked = burstModeEnabled,
+                        onCheckedChange = { enabled ->
+                            onBurstModeChanged(enabled, burstPacketCount, burstDelayMs)
+                        }
+                    )
+                }
+
+                if (burstModeEnabled) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = burstPacketCount.toString(),
+                            onValueChange = { value ->
+                                value.toIntOrNull()?.let { count ->
+                                    if (count in 1..100) {
+                                        onBurstModeChanged(true, count, burstDelayMs)
+                                    }
+                                }
+                            },
+                            label = { Text("Packet Count") },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                        )
+                        OutlinedTextField(
+                            value = burstDelayMs.toString(),
+                            onValueChange = { value ->
+                                value.toLongOrNull()?.let { ms ->
+                                    if (ms in 10..5000) {
+                                        onBurstModeChanged(true, burstPacketCount, ms)
+                                    }
+                                }
+                            },
+                            label = { Text("Delay (ms)") },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun StatsCard(
+    totalPacketsSent: Int,
+    totalPacketsFailed: Int,
+    lastTriggerTime: Long?,
+    lastTimestamp: Long?,
+    onResetStats: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Statistics",
+                    style = MaterialTheme.typography.titleMedium
+                )
+                if (totalPacketsSent > 0 || totalPacketsFailed > 0) {
+                    TextButton(
+                        onClick = onResetStats,
+                        modifier = Modifier.height(32.dp)
+                    ) {
+                        Text("Reset")
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = totalPacketsSent.toString(),
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "Sent",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                if (totalPacketsFailed > 0) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = totalPacketsFailed.toString(),
+                            style = MaterialTheme.typography.headlineMedium,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        Text(
+                            text = "Failed",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            }
+            if (lastTriggerTime != null) {
+                Spacer(modifier = Modifier.height(8.dp))
+                val dateFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
+                Text(
+                    text = "Last: ${dateFormat.format(Date(lastTriggerTime))}",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                lastTimestamp?.let { ts ->
+                    Text(
+                        text = "Timestamp: $ts ns",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun HistorySection(
+    packetHistory: List<PacketHistoryEntry>,
+    onClearHistory: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Packet History (${packetHistory.size})",
+                    style = MaterialTheme.typography.titleMedium
+                )
+                if (packetHistory.isNotEmpty()) {
+                    TextButton(onClick = onClearHistory) {
+                        Text("Clear")
+                    }
+                }
+            }
+
+            if (packetHistory.isEmpty()) {
+                Text(
+                    text = "No packets sent yet",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                )
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 200.dp),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    items(packetHistory) { entry ->
+                        HistoryItem(entry)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun HistoryItem(entry: PacketHistoryEntry) {
+    val dateFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault())
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                color = if (entry.success) {
+                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                } else {
+                    MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
+                },
+                shape = MaterialTheme.shapes.small
+            )
+            .padding(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = if (entry.success) Icons.Default.CheckCircle else Icons.Default.Warning,
+            contentDescription = null,
+            tint = if (entry.success) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.error
+            },
+            modifier = Modifier.size(16.dp)
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = dateFormat.format(Date(entry.timestamp)),
+                style = MaterialTheme.typography.bodySmall
+            )
+            Text(
+                text = "Nano: ${entry.nanoTime}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+            )
+            if (!entry.success) {
+                entry.errorMessage?.let { error ->
+                    Text(
+                        text = error,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ErrorCard(error: String) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer
+        )
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.Warning,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onErrorContainer
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = error,
+                modifier = Modifier.weight(1f),
+                color = MaterialTheme.colorScheme.onErrorContainer
+            )
         }
     }
 }

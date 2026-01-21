@@ -1,57 +1,477 @@
 package com.udptrigger.ui
 
+import android.content.Context
+import android.os.SystemClock
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.udptrigger.data.AppSettings
+import com.udptrigger.data.SettingsDataStore
+import com.udptrigger.domain.NetworkMonitor
+import com.udptrigger.domain.SoundManager
 import com.udptrigger.domain.UdpClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+data class PacketHistoryEntry(
+    val timestamp: Long,
+    val nanoTime: Long,
+    val success: Boolean,
+    val errorMessage: String? = null
+)
 
 data class TriggerState(
     val isConnected: Boolean = false,
     val lastTriggerTime: Long? = null,
     val lastTimestamp: Long? = null,
     val error: String? = null,
-    val config: UdpConfig = UdpConfig()
+    val config: UdpConfig = UdpConfig(),
+    val packetHistory: List<PacketHistoryEntry> = emptyList(),
+    val totalPacketsSent: Int = 0,
+    val totalPacketsFailed: Int = 0,
+    val hapticFeedbackEnabled: Boolean = true,
+    val soundEnabled: Boolean = false,
+    val rateLimitMs: Long = 50,
+    val rateLimitEnabled: Boolean = true,
+    val autoReconnect: Boolean = false,
+    val keepScreenOn: Boolean = false,
+    val isNetworkAvailable: Boolean = true,
+    val burstMode: BurstMode = BurstMode()
+)
+
+data class BurstMode(
+    val enabled: Boolean = false,
+    val packetCount: Int = 5,
+    val delayMs: Long = 100,
+    val isSending: Boolean = false
 )
 
 data class UdpConfig(
     val host: String = "192.168.1.100",
     val port: Int = 5000,
-    val packetContent: String = "TRIGGER"
+    val packetContent: String = "TRIGGER",
+    val hexMode: Boolean = false,
+    val includeTimestamp: Boolean = true,
+    val includeBurstIndex: Boolean = false
 ) {
     companion object {
-        // Simple IPv4 validation regex
+        // IPv4 validation regex
         private val IPV4_PATTERN = Regex(
             """^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$"""
         )
 
+        // IPv6 validation regex
+        private val IPV6_PATTERN = Regex(
+            """^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]+|::(ffff(:0{1,4})?:)?((25[0-5]|(2[0-4]|1?[0-9])?[0-9])\.){3}(25[0-5]|(2[0-4]|1?[0-9])?[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1?[0-9])?[0-9])\.){3}(25[0-5]|(2[0-4]|1?[0-9])?[0-9]))$"""
+        )
+
         fun isValidHost(host: String): Boolean {
             if (host.isBlank()) return false
-            // If it contains dots, it must be a valid IPv4
+            // Check for IPv6
+            if (host.contains(':')) {
+                return IPV6_PATTERN.matches(host)
+            }
+            // Check for IPv4
             if (host.contains('.')) {
                 return IPV4_PATTERN.matches(host)
             }
-            // Hostname without dots: alphanumeric and hyphens only
+            // Hostname without dots or colons: alphanumeric and hyphens only
             return host.matches(Regex("""^[a-zA-Z0-9\-]+$"""))
         }
     }
 
-    fun isValid(): Boolean = UdpConfig.isValidHost(host) && port in 1..65535
+    fun isValid(): Boolean = isValidHost(host) && port in 1..65535
 }
 
-class TriggerViewModel : ViewModel() {
+class TriggerViewModel(
+    private val context: Context,
+    private val dataStore: SettingsDataStore
+) : ViewModel() {
 
     private val _state = MutableStateFlow(TriggerState())
     val state: StateFlow<TriggerState> = _state.asStateFlow()
 
     private val udpClient = UdpClient()
+    private var lastTriggerNanoTime: Long = 0
+    private val soundManager = SoundManager(context)
+    private val networkMonitor = NetworkMonitor(context)
+
+    private val vibrator: Vibrator? by lazy {
+        when {
+            android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S -> {
+                val vibratorManager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
+                vibratorManager?.defaultVibrator
+            }
+            else -> @Suppress("DEPRECATION")
+            context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+        }
+    }
+
+    init {
+        // Load custom presets
+        com.udptrigger.data.PresetsManager.loadCustomPresets(context)
+
+        // Load saved configuration
+        viewModelScope.launch {
+            try {
+                val savedConfig = dataStore.configFlow.first()
+                _state.value = _state.value.copy(config = savedConfig)
+            } catch (e: Exception) {
+                // Use default config if loading fails
+            }
+        }
+
+        // Load saved settings
+        viewModelScope.launch {
+            try {
+                val savedSettings = dataStore.settingsFlow.first()
+                _state.value = _state.value.copy(
+                    hapticFeedbackEnabled = savedSettings.hapticFeedbackEnabled,
+                    soundEnabled = savedSettings.soundEnabled,
+                    rateLimitEnabled = savedSettings.rateLimitEnabled,
+                    rateLimitMs = savedSettings.rateLimitMs,
+                    autoReconnect = savedSettings.autoReconnect,
+                    keepScreenOn = savedSettings.keepScreenOn
+                )
+            } catch (e: Exception) {
+                // Use defaults if loading fails
+            }
+        }
+
+        // Monitor network state for auto-reconnect
+        networkMonitor.isNetworkAvailableFlow
+            .onEach { isAvailable ->
+                _state.value = _state.value.copy(isNetworkAvailable = isAvailable)
+                if (isAvailable && _state.value.autoReconnect && !_state.value.isConnected) {
+                    // Attempt auto-reconnect
+                    connect()
+                }
+            }
+            .launchIn(viewModelScope)
+    }
 
     fun updateConfig(config: UdpConfig) {
         _state.value = _state.value.copy(config = config)
+        viewModelScope.launch {
+            dataStore.saveConfig(config)
+        }
+    }
+
+    fun updatePacketOptions(hexMode: Boolean, includeTimestamp: Boolean, includeBurstIndex: Boolean) {
+        _state.value = _state.value.copy(
+            config = _state.value.config.copy(
+                hexMode = hexMode,
+                includeTimestamp = includeTimestamp,
+                includeBurstIndex = includeBurstIndex
+            )
+        )
+        viewModelScope.launch {
+            dataStore.saveConfig(_state.value.config)
+        }
+    }
+
+    fun getPacketSizePreview(): Int {
+        return buildPacketMessage(System.nanoTime(), 0).size
+    }
+
+    fun updateHapticFeedback(enabled: Boolean) {
+        _state.value = _state.value.copy(hapticFeedbackEnabled = enabled)
+        viewModelScope.launch {
+            dataStore.saveHapticFeedback(enabled)
+        }
+    }
+
+    fun updateSoundEnabled(enabled: Boolean) {
+        _state.value = _state.value.copy(soundEnabled = enabled)
+        viewModelScope.launch {
+            dataStore.saveSoundEnabled(enabled)
+        }
+    }
+
+    fun updateRateLimit(enabled: Boolean, ms: Long) {
+        _state.value = _state.value.copy(
+            rateLimitEnabled = enabled,
+            rateLimitMs = ms
+        )
+        viewModelScope.launch {
+            dataStore.saveRateLimit(enabled, ms)
+        }
+    }
+
+    fun updateAutoReconnect(enabled: Boolean) {
+        _state.value = _state.value.copy(autoReconnect = enabled)
+        viewModelScope.launch {
+            dataStore.saveAutoReconnect(enabled)
+        }
+    }
+
+    fun updateKeepScreenOn(enabled: Boolean) {
+        _state.value = _state.value.copy(keepScreenOn = enabled)
+        viewModelScope.launch {
+            dataStore.saveKeepScreenOn(enabled)
+        }
+    }
+
+    fun clearHistory() {
+        _state.value = _state.value.copy(
+            packetHistory = emptyList(),
+            totalPacketsSent = 0,
+            totalPacketsFailed = 0
+        )
+    }
+
+    fun applyPreset(presetName: String) {
+        val preset = com.udptrigger.data.PresetsManager.getPreset(presetName)
+        preset?.let {
+            updateConfig(it.config)
+        }
+    }
+
+    fun updateBurstMode(enabled: Boolean, packetCount: Int, delayMs: Long) {
+        _state.value = _state.value.copy(
+            burstMode = _state.value.burstMode.copy(
+                enabled = enabled,
+                packetCount = packetCount.coerceIn(1, 100),
+                delayMs = delayMs.coerceIn(10, 5000)
+            )
+        )
+    }
+
+    fun triggerBurst() {
+        if (_state.value.burstMode.isSending) return
+
+        viewModelScope.launch {
+            _state.value = _state.value.copy(
+                burstMode = _state.value.burstMode.copy(isSending = true)
+            )
+
+            val burstConfig = _state.value.burstMode
+            repeat(burstConfig.packetCount) { index ->
+                val timestamp = System.nanoTime()
+                val message = buildPacketMessage(timestamp, index)
+                val result = withContext(Dispatchers.IO) {
+                    udpClient.send(message)
+                }
+                result.fold(
+                    onSuccess = {
+                        triggerHapticFeedback()
+                        if (index == 0) playSoundEffect() // Only play sound once for burst
+                        val newEntry = PacketHistoryEntry(
+                            timestamp = System.currentTimeMillis(),
+                            nanoTime = timestamp,
+                            success = true
+                        )
+                        val updatedHistory = (listOf(newEntry) + _state.value.packetHistory).take(100)
+                        _state.value = _state.value.copy(
+                            lastTriggerTime = System.currentTimeMillis(),
+                            lastTimestamp = timestamp,
+                            error = null,
+                            packetHistory = updatedHistory,
+                            totalPacketsSent = _state.value.totalPacketsSent + 1
+                        )
+                    },
+                    onFailure = { e ->
+                        val newEntry = PacketHistoryEntry(
+                            timestamp = System.currentTimeMillis(),
+                            nanoTime = timestamp,
+                            success = false,
+                            errorMessage = e.message
+                        )
+                        val updatedHistory = (listOf(newEntry) + _state.value.packetHistory).take(100)
+                        _state.value = _state.value.copy(
+                            error = "Send failed: ${e.message}",
+                            packetHistory = updatedHistory,
+                            totalPacketsFailed = _state.value.totalPacketsFailed + 1
+                        )
+                    }
+                )
+
+                // Delay between packets (except after last one)
+                if (index < burstConfig.packetCount - 1) {
+                    kotlinx.coroutines.delay(burstConfig.delayMs)
+                }
+            }
+
+            _state.value = _state.value.copy(
+                burstMode = _state.value.burstMode.copy(isSending = false)
+            )
+        }
+    }
+
+    private fun triggerHapticFeedback() {
+        if (!_state.value.hapticFeedbackEnabled) return
+
+        vibrator?.let {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                it.vibrate(VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE))
+            } else {
+                @Suppress("DEPRECATION")
+                it.vibrate(50)
+            }
+        }
+    }
+
+    private fun playSoundEffect() {
+        if (_state.value.soundEnabled) {
+            soundManager.playClickSound()
+        }
+    }
+
+    private fun checkRateLimit(): Boolean {
+        if (!_state.value.rateLimitEnabled) return true
+
+        val currentTime = SystemClock.elapsedRealtimeNanos()
+        val timeSinceLastTrigger = (currentTime - lastTriggerNanoTime) / 1_000_000
+
+        if (timeSinceLastTrigger < _state.value.rateLimitMs) {
+            return false
+        }
+        return true
+    }
+
+    fun trigger() {
+        if (!checkRateLimit()) {
+            _state.value = _state.value.copy(
+                error = "Rate limit: please wait ${_state.value.rateLimitMs}ms between triggers"
+            )
+            return
+        }
+
+        viewModelScope.launch {
+            val timestamp = System.nanoTime()
+            lastTriggerNanoTime = timestamp
+            val message = buildPacketMessage(timestamp, 0)
+            val result = withContext(Dispatchers.IO) {
+                udpClient.send(message)
+            }
+            result.fold(
+                onSuccess = {
+                    triggerHapticFeedback()
+                    playSoundEffect()
+                    val newEntry = PacketHistoryEntry(
+                        timestamp = System.currentTimeMillis(),
+                        nanoTime = timestamp,
+                        success = true
+                    )
+                    val updatedHistory = (listOf(newEntry) + _state.value.packetHistory).take(100)
+                    _state.value = _state.value.copy(
+                        lastTriggerTime = System.currentTimeMillis(),
+                        lastTimestamp = timestamp,
+                        error = null,
+                        packetHistory = updatedHistory,
+                        totalPacketsSent = _state.value.totalPacketsSent + 1
+                    )
+                },
+                onFailure = { e ->
+                    val newEntry = PacketHistoryEntry(
+                        timestamp = System.currentTimeMillis(),
+                        nanoTime = timestamp,
+                        success = false,
+                        errorMessage = e.message
+                    )
+                    val updatedHistory = (listOf(newEntry) + _state.value.packetHistory).take(100)
+                    _state.value = _state.value.copy(
+                        error = "Send failed: ${e.message}",
+                        packetHistory = updatedHistory,
+                        totalPacketsFailed = _state.value.totalPacketsFailed + 1
+                    )
+                }
+            )
+        }
+    }
+
+    private fun buildPacketMessage(timestamp: Long, burstIndex: Int): ByteArray {
+        val config = _state.value.config
+        val baseContent = config.packetContent
+
+        return when {
+            config.hexMode -> {
+                // Hex mode: interpret packetContent as hex bytes
+                val hexContent = if (config.includeTimestamp) {
+                    "$baseContent:${timestamp.toString(16)}"
+                } else {
+                    baseContent
+                }
+                hexStringToBytes(hexContent)
+            }
+            config.includeTimestamp && config.includeBurstIndex && burstIndex >= 0 -> {
+                "$baseContent:$timestamp:$burstIndex".toByteArray(Charsets.UTF_8)
+            }
+            config.includeTimestamp -> {
+                "$baseContent:$timestamp".toByteArray(Charsets.UTF_8)
+            }
+            config.includeBurstIndex && burstIndex >= 0 -> {
+                "$baseContent:$burstIndex".toByteArray(Charsets.UTF_8)
+            }
+            else -> {
+                baseContent.toByteArray(Charsets.UTF_8)
+            }
+        }
+    }
+
+    private fun hexStringToBytes(hex: String): ByteArray {
+        // Remove any spaces or newlines
+        val cleanHex = hex.replace("\\s".toRegex(), "")
+        // Pad to even length if necessary
+        val paddedHex = if (cleanHex.length % 2 != 0) "0$cleanHex" else cleanHex
+
+        return paddedHex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+    }
+
+    fun triggerWithTimestamp(timestamp: Long) {
+        if (!checkRateLimit()) {
+            return
+        }
+
+        viewModelScope.launch {
+            lastTriggerNanoTime = timestamp
+            val message = buildPacketMessage(timestamp, 0)
+            val result = withContext(Dispatchers.IO) {
+                udpClient.send(message)
+            }
+            result.fold(
+                onSuccess = {
+                    triggerHapticFeedback()
+                    playSoundEffect()
+                    val newEntry = PacketHistoryEntry(
+                        timestamp = System.currentTimeMillis(),
+                        nanoTime = timestamp,
+                        success = true
+                    )
+                    val updatedHistory = (listOf(newEntry) + _state.value.packetHistory).take(100)
+                    _state.value = _state.value.copy(
+                        lastTriggerTime = System.currentTimeMillis(),
+                        lastTimestamp = timestamp,
+                        error = null,
+                        packetHistory = updatedHistory,
+                        totalPacketsSent = _state.value.totalPacketsSent + 1
+                    )
+                },
+                onFailure = { e ->
+                    val newEntry = PacketHistoryEntry(
+                        timestamp = System.currentTimeMillis(),
+                        nanoTime = timestamp,
+                        success = false,
+                        errorMessage = e.message
+                    )
+                    val updatedHistory = (listOf(newEntry) + _state.value.packetHistory).take(100)
+                    _state.value = _state.value.copy(
+                        error = "Send failed: ${e.message}",
+                        packetHistory = updatedHistory,
+                        totalPacketsFailed = _state.value.totalPacketsFailed + 1
+                    )
+                }
+            )
+        }
     }
 
     fun connect() {
@@ -68,53 +488,6 @@ class TriggerViewModel : ViewModel() {
         }
     }
 
-    fun trigger() {
-        viewModelScope.launch {
-            val timestamp = System.nanoTime()
-            val message = "${_state.value.config.packetContent}:$timestamp".toByteArray(Charsets.UTF_8)
-            val result = withContext(Dispatchers.IO) {
-                udpClient.send(message)
-            }
-            result.fold(
-                onSuccess = {
-                    _state.value = _state.value.copy(
-                        lastTriggerTime = System.currentTimeMillis(),
-                        lastTimestamp = timestamp,
-                        error = null
-                    )
-                },
-                onFailure = { e ->
-                    _state.value = _state.value.copy(
-                        error = "Send failed: ${e.message}"
-                    )
-                }
-            )
-        }
-    }
-
-    fun triggerWithTimestamp(timestamp: Long) {
-        viewModelScope.launch {
-            val message = "${_state.value.config.packetContent}:$timestamp".toByteArray(Charsets.UTF_8)
-            val result = withContext(Dispatchers.IO) {
-                udpClient.send(message)
-            }
-            result.fold(
-                onSuccess = {
-                    _state.value = _state.value.copy(
-                        lastTriggerTime = System.currentTimeMillis(),
-                        lastTimestamp = timestamp,
-                        error = null
-                    )
-                },
-                onFailure = { e ->
-                    _state.value = _state.value.copy(
-                        error = "Send failed: ${e.message}"
-                    )
-                }
-            )
-        }
-    }
-
     fun disconnect() {
         if (!_state.value.isConnected) return
 
@@ -127,5 +500,66 @@ class TriggerViewModel : ViewModel() {
     override fun onCleared() {
         super.onCleared()
         udpClient.closeSync()
+        soundManager.release()
+    }
+
+    // Custom Preset Management
+
+    /**
+     * Add a new custom preset from the current configuration
+     * @param name Name for the new preset
+     * @param description Optional description
+     * @return true if added successfully, false if name already exists
+     */
+    fun saveAsPreset(name: String, description: String = ""): Boolean {
+        val preset = com.udptrigger.data.CustomPreset(
+            name = name,
+            host = _state.value.config.host,
+            port = _state.value.config.port,
+            packetContent = _state.value.config.packetContent,
+            hexMode = _state.value.config.hexMode,
+            includeTimestamp = _state.value.config.includeTimestamp,
+            includeBurstIndex = _state.value.config.includeBurstIndex,
+            description = description
+        )
+        return com.udptrigger.data.PresetsManager.addCustomPreset(context, preset)
+    }
+
+    /**
+     * Update an existing custom preset
+     */
+    fun updatePreset(oldName: String, name: String, description: String = ""): Boolean {
+        val preset = com.udptrigger.data.CustomPreset(
+            name = name,
+            host = _state.value.config.host,
+            port = _state.value.config.port,
+            packetContent = _state.value.config.packetContent,
+            hexMode = _state.value.config.hexMode,
+            includeTimestamp = _state.value.config.includeTimestamp,
+            includeBurstIndex = _state.value.config.includeBurstIndex,
+            description = description
+        )
+        return com.udptrigger.data.PresetsManager.updateCustomPreset(context, oldName, preset)
+    }
+
+    /**
+     * Delete a custom preset
+     */
+    fun deletePreset(name: String): Boolean {
+        return com.udptrigger.data.PresetsManager.deleteCustomPreset(context, name)
+    }
+
+    /**
+     * Get all custom presets
+     */
+    fun getCustomPresets(): List<com.udptrigger.data.CustomPreset> {
+        return com.udptrigger.data.PresetsManager.customPresets.value
+    }
+
+    /**
+     * Check if a preset is custom (can be deleted)
+     */
+    fun isCustomPreset(name: String): Boolean {
+        return com.udptrigger.data.PresetsManager.isCustomPreset(name)
     }
 }
