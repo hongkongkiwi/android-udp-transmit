@@ -1126,4 +1126,34 @@ class TriggerViewModel(
             )
         }
     }
+
+    /**
+     * Reply to a received packet
+     */
+    suspend fun replyToPacket(
+        sourceAddress: String,
+        sourcePort: Int,
+        data: String
+    ) {
+        if (!_state.value.isListening) {
+            _state.value = _state.value.copy(
+                error = "Cannot reply: not in listen mode"
+            )
+            return
+        }
+
+        val address = java.net.InetAddress.getByName(sourceAddress)
+        val packetData = data.toByteArray()
+
+        udpClient.sendTo(packetData, address, sourcePort).fold(
+            onSuccess = {
+                _state.value = _state.value.copy(error = null)
+            },
+            onFailure = { e ->
+                _state.value = _state.value.copy(
+                    error = "Reply failed: ${e.message}"
+                )
+            }
+        )
+    }
 }

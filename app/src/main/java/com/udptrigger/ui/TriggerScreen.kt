@@ -212,6 +212,7 @@ fun TriggerScreen(
             // Listen mode section
             if (showListenMode) {
                 val deviceIp = triggerViewModel.getDeviceIpAddress()
+                val coroutineScope = rememberCoroutineScope()
                 ListenModeSection(
                     isListening = state.isListening,
                     listenPort = state.listenPort ?: 5000,
@@ -220,6 +221,11 @@ fun TriggerScreen(
                     onStartListening = { triggerViewModel.startListening(it) },
                     onStopListening = { triggerViewModel.stopListening() },
                     onClearReceived = { triggerViewModel.clearReceivedPackets() },
+                    onReply = { address, port, data ->
+                        coroutineScope.launch {
+                            triggerViewModel.replyToPacket(address, port, data)
+                        }
+                    },
                     modifier = Modifier.padding(bottom = 24.dp)
                 )
             }
@@ -1676,6 +1682,7 @@ fun ListenModeSection(
     onStartListening: (Int) -> Unit,
     onStopListening: () -> Unit,
     onClearReceived: () -> Unit,
+    onReply: (String, Int, String) -> Unit = { _, _, _ -> },
     modifier: Modifier = Modifier
 ) {
     var portInput by remember { mutableStateOf(listenPort.toString()) }
@@ -1864,7 +1871,7 @@ fun ListenModeSection(
                             verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             items(receivedPackets.take(20)) { packet ->
-                                ReceivedPacketItem(packet, showHexView)
+                                ReceivedPacketItem(packet, showHexView, onReply)
                             }
                         }
                     }
@@ -1889,8 +1896,12 @@ fun ListenModeSection(
 @Composable
 fun ReceivedPacketItem(
     packet: com.udptrigger.ui.ReceivedPacketInfo,
-    showHexView: Boolean
+    showHexView: Boolean,
+    onReply: (String, Int, String) -> Unit
 ) {
+    var showReplyDialog by remember { mutableStateOf(false) }
+    var replyData by remember { mutableStateOf(packet.data) }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -1941,12 +1952,60 @@ fun ReceivedPacketItem(
                 overflow = TextOverflow.Ellipsis
             )
 
-            Text(
-                text = java.text.SimpleDateFormat("HH:mm:ss.SSS").format(java.util.Date(packet.timestamp)),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = java.text.SimpleDateFormat("HH:mm:ss.SSS").format(java.util.Date(packet.timestamp)),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                )
+                IconButton(
+                    onClick = { showReplyDialog = true },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Share,
+                        contentDescription = "Reply",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
         }
+    }
+
+    if (showReplyDialog) {
+        AlertDialog(
+            onDismissRequest = { showReplyDialog = false },
+            title = { Text("Reply to ${packet.sourceAddress}:${packet.sourcePort}") },
+            text = {
+                OutlinedTextField(
+                    value = replyData,
+                    onValueChange = { replyData = it },
+                    label = { Text("Response Data") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onReply(packet.sourceAddress, packet.sourcePort, replyData)
+                        showReplyDialog = false
+                    }
+                ) {
+                    Text("Send")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showReplyDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 
