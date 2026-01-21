@@ -26,7 +26,6 @@ import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
-import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
@@ -39,6 +38,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogWindowProvider
+import kotlinx.coroutines.launch
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -65,12 +68,13 @@ fun TriggerScreen(
     val state by triggerViewModel.state.collectAsState()
     val context = LocalContext.current
 
-    // Keep screen on
-    LaunchedEffect(state.keepScreenOn) {
-        val activity = context.findActivity()
+    // Keep screen on with proper cleanup
+    val activity = context.findActivity()
+    DisposableEffect(state.keepScreenOn) {
         if (state.keepScreenOn) {
             activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        } else {
+        }
+        onDispose {
             activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
     }
@@ -410,7 +414,6 @@ fun TriggerScreen(
             } else {
                 // Single trigger mode
                 val isPressed = remember { mutableStateOf(false) }
-                val wasTriggered = remember(state.lastTriggered) { state.lastTriggered > 0 }
 
                 LaunchedEffect(state.lastTriggered) {
                     if (state.lastTriggered > 0) {
@@ -755,7 +758,7 @@ fun ConfigSection(
                 value = config.port.toString(),
                 onValueChange = { value ->
                     value.toIntOrNull()?.let { port ->
-                        if (port in 0..65535) {
+                        if (port in 1..65535) {
                             onConfigChange(config.copy(port = port))
                         }
                     }
@@ -780,11 +783,18 @@ fun ConfigSection(
                 singleLine = true,
                 supportingText = {
                     val preview = if (config.hexMode) {
-                        try {
-                            val bytes = config.packetContent.chunked(2).mapNotNull { it.toIntOrNull(16) }
-                            "Preview: ${bytes.take(8).joinToString(", ") }${if (bytes.size > 8) "..." else ""}"
-                        } catch (e: Exception) {
-                            "Invalid hex: use pairs like 48 45 4C 4C 4F"
+                        when {
+                            config.packetContent.isEmpty() -> "Enter hex values (e.g., 48454C4F)"
+                            config.packetContent.length % 2 != 0 -> "Invalid hex: odd number of characters"
+                            !config.packetContent.all { it.isDigit() || it.lowercaseChar() in 'a'..'f' } -> "Invalid hex: use 0-9, A-F only"
+                            else -> {
+                                try {
+                                    val bytes = config.packetContent.chunked(2).mapNotNull { it.toIntOrNull(16) }
+                                    "Preview: ${bytes.take(8).joinToString(", ") }${if (bytes.size > 8) "..." else ""}"
+                                } catch (e: Exception) {
+                                    "Invalid hex format"
+                                }
+                            }
                         }
                     } else {
                         "Preview: ${config.packetContent.take(50)}${if (config.packetContent.length > 50) "..." else ""}"
