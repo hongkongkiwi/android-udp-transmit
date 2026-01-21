@@ -26,7 +26,24 @@ data class PacketHistoryEntry(
     val timestamp: Long,
     val nanoTime: Long,
     val success: Boolean,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val type: PacketType = PacketType.SENT,
+    val sourceAddress: String? = null,
+    val sourcePort: Int? = null,
+    val data: String? = null
+)
+
+enum class PacketType {
+    SENT,
+    RECEIVED
+}
+
+data class ReceivedPacketInfo(
+    val timestamp: Long,
+    val sourceAddress: String,
+    val sourcePort: Int,
+    val data: String,
+    val length: Int
 )
 
 data class PacketSizeBreakdown(
@@ -40,13 +57,17 @@ data class PacketSizeBreakdown(
 
 data class TriggerState(
     val isConnected: Boolean = false,
+    val isListening: Boolean = false,
+    val listenPort: Int? = null,
     val lastTriggerTime: Long? = null,
     val lastTimestamp: Long? = null,
     val error: String? = null,
     val config: UdpConfig = UdpConfig(),
     val packetHistory: List<PacketHistoryEntry> = emptyList(),
+    val receivedPackets: List<ReceivedPacketInfo> = emptyList(),
     val totalPacketsSent: Int = 0,
     val totalPacketsFailed: Int = 0,
+    val totalPacketsReceived: Int = 0,
     val hapticFeedbackEnabled: Boolean = true,
     val soundEnabled: Boolean = false,
     val rateLimitMs: Long = 50,
@@ -332,7 +353,8 @@ class TriggerViewModel(
                         val newEntry = PacketHistoryEntry(
                             timestamp = System.currentTimeMillis(),
                             nanoTime = timestamp,
-                            success = true
+                            success = true,
+                            type = PacketType.SENT
                         )
                         val updatedHistory = (listOf(newEntry) + _state.value.packetHistory).take(100)
                         _state.value = _state.value.copy(
@@ -348,7 +370,8 @@ class TriggerViewModel(
                             timestamp = System.currentTimeMillis(),
                             nanoTime = timestamp,
                             success = false,
-                            errorMessage = e.message
+                            errorMessage = e.message,
+                            type = PacketType.SENT
                         )
                         val updatedHistory = (listOf(newEntry) + _state.value.packetHistory).take(100)
                         _state.value = _state.value.copy(
@@ -424,7 +447,8 @@ class TriggerViewModel(
                     val newEntry = PacketHistoryEntry(
                         timestamp = System.currentTimeMillis(),
                         nanoTime = timestamp,
-                        success = true
+                        success = true,
+                        type = PacketType.SENT
                     )
                     val updatedHistory = (listOf(newEntry) + _state.value.packetHistory).take(100)
                     _state.value = _state.value.copy(
@@ -440,7 +464,8 @@ class TriggerViewModel(
                         timestamp = System.currentTimeMillis(),
                         nanoTime = timestamp,
                         success = false,
-                        errorMessage = e.message
+                        errorMessage = e.message,
+                        type = PacketType.SENT
                     )
                     val updatedHistory = (listOf(newEntry) + _state.value.packetHistory).take(100)
                     _state.value = _state.value.copy(
@@ -509,7 +534,8 @@ class TriggerViewModel(
                     val newEntry = PacketHistoryEntry(
                         timestamp = System.currentTimeMillis(),
                         nanoTime = timestamp,
-                        success = true
+                        success = true,
+                        type = PacketType.SENT
                     )
                     val updatedHistory = (listOf(newEntry) + _state.value.packetHistory).take(100)
                     _state.value = _state.value.copy(
@@ -525,7 +551,8 @@ class TriggerViewModel(
                         timestamp = System.currentTimeMillis(),
                         nanoTime = timestamp,
                         success = false,
-                        errorMessage = e.message
+                        errorMessage = e.message,
+                        type = PacketType.SENT
                     )
                     val updatedHistory = (listOf(newEntry) + _state.value.packetHistory).take(100)
                     _state.value = _state.value.copy(
@@ -559,6 +586,95 @@ class TriggerViewModel(
             udpClient.close()
             _state.value = _state.value.copy(isConnected = false, error = null)
         }
+    }
+
+    // Listen Mode for Receiving Packets
+
+    /**
+     * Start listening for UDP packets on the specified port
+     */
+    fun startListening(port: Int) {
+        if (_state.value.isConnected || _state.value.isListening) return
+
+        viewModelScope.launch {
+            try {
+                udpClient.initializeListen(port)
+                _state.value = _state.value.copy(
+                    isListening = true,
+                    listenPort = port,
+                    error = null
+                )
+
+                // Start receiving packets
+                udpClient.startListening().collect { packet ->
+                    val dataString = packet.data.toString(Charsets.UTF_8)
+                    val receivedInfo = ReceivedPacketInfo(
+                        timestamp = packet.timestamp,
+                        sourceAddress = packet.sourceAddress.hostAddress ?: "Unknown",
+                        sourcePort = packet.sourcePort,
+                        data = dataString,
+                        length = packet.length
+                    )
+
+                    // Add to received packets list (keep last 100)
+                    val updatedReceived = (listOf(receivedInfo) + _state.value.receivedPackets).take(100)
+
+                    // Also add to history
+                    val historyEntry = PacketHistoryEntry(
+                        timestamp = packet.timestamp,
+                        nanoTime = System.nanoTime(),
+                        success = true,
+                        type = PacketType.RECEIVED,
+                        sourceAddress = packet.sourceAddress.hostAddress,
+                        sourcePort = packet.sourcePort,
+                        data = dataString
+                    )
+                    val updatedHistory = (listOf(historyEntry) + _state.value.packetHistory).take(100)
+
+                    _state.value = _state.value.copy(
+                        receivedPackets = updatedReceived,
+                        packetHistory = updatedHistory,
+                        totalPacketsReceived = _state.value.totalPacketsReceived + 1
+                    )
+
+                    // Play sound/haptic for received packets
+                    triggerHapticFeedback()
+                    playSoundEffect()
+                }
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(
+                    error = "Listen failed: ${e.message}",
+                    isListening = false
+                )
+            }
+        }
+    }
+
+    /**
+     * Stop listening for UDP packets
+     */
+    fun stopListening() {
+        if (!_state.value.isListening) return
+
+        viewModelScope.launch {
+            udpClient.stopListening()
+            udpClient.close()
+            _state.value = _state.value.copy(
+                isListening = false,
+                listenPort = null,
+                error = null
+            )
+        }
+    }
+
+    /**
+     * Clear received packets history
+     */
+    fun clearReceivedPackets() {
+        _state.value = _state.value.copy(
+            receivedPackets = emptyList(),
+            totalPacketsReceived = 0
+        )
     }
 
     override fun onCleared() {
