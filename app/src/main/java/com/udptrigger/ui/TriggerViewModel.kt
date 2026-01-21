@@ -1,7 +1,9 @@
 package com.udptrigger.ui
 
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -14,6 +16,7 @@ import com.udptrigger.domain.NetworkMonitor
 import com.udptrigger.domain.SoundManager
 import com.udptrigger.domain.UdpClient
 import com.udptrigger.domain.WakeLockManager
+import com.udptrigger.service.UdpForegroundService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -79,6 +82,8 @@ data class TriggerState(
     val keepScreenOn: Boolean = false,
     val wakeLockEnabled: Boolean = false,
     val isWakeLockActive: Boolean = false,
+    val foregroundServiceEnabled: Boolean = false,
+    val isForegroundServiceActive: Boolean = false,
     val isNetworkAvailable: Boolean = true,
     val burstMode: BurstMode = BurstMode(),
     val scheduledTrigger: ScheduledTrigger = ScheduledTrigger(),
@@ -199,7 +204,8 @@ class TriggerViewModel(
                     autoReconnect = savedSettings.autoReconnect,
                     autoConnectOnStartup = savedSettings.autoConnectOnStartup,
                     keepScreenOn = savedSettings.keepScreenOn,
-                    wakeLockEnabled = savedSettings.wakeLockEnabled
+                    wakeLockEnabled = savedSettings.wakeLockEnabled,
+                    foregroundServiceEnabled = savedSettings.foregroundServiceEnabled
                 )
 
                 // Auto-connect on startup if enabled
@@ -361,6 +367,19 @@ class TriggerViewModel(
         }
     }
 
+    fun updateForegroundServiceEnabled(enabled: Boolean) {
+        _state.value = _state.value.copy(foregroundServiceEnabled = enabled)
+        viewModelScope.launch {
+            dataStore.saveForegroundServiceEnabled(enabled)
+            // Auto-start/stop when connected/disconnected
+            if (enabled && _state.value.isConnected) {
+                startForegroundService()
+            } else if (!enabled) {
+                stopForegroundService()
+            }
+        }
+    }
+
     private fun acquireWakeLock() {
         if (_state.value.wakeLockEnabled && !_state.value.isWakeLockActive) {
             if (wakeLockManager.acquire()) {
@@ -373,6 +392,41 @@ class TriggerViewModel(
         if (_state.value.isWakeLockActive) {
             wakeLockManager.release()
             _state.value = _state.value.copy(isWakeLockActive = false)
+        }
+    }
+
+    private fun startForegroundService() {
+        if (_state.value.foregroundServiceEnabled && !_state.value.isForegroundServiceActive) {
+            val intent = Intent(context, UdpForegroundService::class.java).apply {
+                action = UdpForegroundService.ACTION_START
+                putExtra(UdpForegroundService.EXTRA_IS_CONNECTED, _state.value.isConnected)
+                putExtra(UdpForegroundService.EXTRA_TARGET_HOST, _state.value.config.host)
+                putExtra(UdpForegroundService.EXTRA_TARGET_PORT, _state.value.config.port)
+            }
+            context.startService(intent)
+            _state.value = _state.value.copy(isForegroundServiceActive = true)
+        }
+    }
+
+    private fun stopForegroundService() {
+        if (_state.value.isForegroundServiceActive) {
+            val intent = Intent(context, UdpForegroundService::class.java).apply {
+                action = UdpForegroundService.ACTION_STOP
+            }
+            context.startService(intent)
+            _state.value = _state.value.copy(isForegroundServiceActive = false)
+        }
+    }
+
+    private fun updateForegroundServiceNotification() {
+        if (_state.value.isForegroundServiceActive) {
+            val intent = Intent(context, UdpForegroundService::class.java).apply {
+                action = UdpForegroundService.ACTION_UPDATE_STATUS
+                putExtra(UdpForegroundService.EXTRA_IS_CONNECTED, _state.value.isConnected)
+                putExtra(UdpForegroundService.EXTRA_TARGET_HOST, _state.value.config.host)
+                putExtra(UdpForegroundService.EXTRA_TARGET_PORT, _state.value.config.port)
+            }
+            context.startService(intent)
         }
     }
 
@@ -819,6 +873,8 @@ class TriggerViewModel(
                 _state.value = _state.value.copy(isConnected = true, error = null)
                 // Acquire wake lock if enabled
                 acquireWakeLock()
+                // Start foreground service if enabled
+                startForegroundService()
             } catch (e: Exception) {
                 _state.value = _state.value.copy(error = "Connection failed: ${e.message}")
             }
@@ -829,6 +885,8 @@ class TriggerViewModel(
         if (!_state.value.isConnected) return
 
         viewModelScope.launch {
+            // Stop foreground service
+            stopForegroundService()
             // Release wake lock before disconnecting
             releaseWakeLock()
             udpClient.close()
@@ -1062,6 +1120,8 @@ class TriggerViewModel(
         udpClient.closeSync()
         soundManager.release()
         wakeLockManager.cleanup()
+        // Stop foreground service when ViewModel is cleared
+        stopForegroundService()
     }
 
     // Custom Preset Management

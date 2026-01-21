@@ -18,6 +18,12 @@
     <!-- Broadcast UDP permission -->
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
 
+    <!-- Foreground service permission -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+
+    <!-- Notification permission for Android 13+ -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -31,12 +37,26 @@
             android:name=".MainActivity"
             android:exported="true"
             android:theme="@style/Theme.UdpTrigger"
-            android:windowSoftInputMode="adjustResize">
+            android:windowSoftInputMode="adjustResize"
+            android:launchMode="singleTop">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Foreground service for background UDP operation -->
+        <service
+            android:name=".service.UdpForegroundService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <intent-filter>
+                <action android:name="com.udptrigger.START_SERVICE" />
+                <action android:name="com.udptrigger.STOP_SERVICE" />
+            </intent-filter>
+        </service>
+
     </application>
 
 </manifest>

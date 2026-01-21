@@ -31,6 +31,7 @@ class SettingsDataStore(private val context: Context) {
         val AUTO_CONNECT_ON_STARTUP = booleanPreferencesKey("auto_connect_on_startup")
         val KEEP_SCREEN_ON = booleanPreferencesKey("keep_screen_on")
         val WAKE_LOCK_ENABLED = booleanPreferencesKey("wake_lock_enabled")
+        val FOREGROUND_SERVICE_ENABLED = booleanPreferencesKey("foreground_service_enabled")
     }
 
     val configFlow: Flow<UdpConfig> = context.dataStore.data.map { preferences ->
@@ -53,7 +54,8 @@ class SettingsDataStore(private val context: Context) {
             autoReconnect = preferences[PreferencesKeys.AUTO_RECONNECT] ?: false,
             autoConnectOnStartup = preferences[PreferencesKeys.AUTO_CONNECT_ON_STARTUP] ?: false,
             keepScreenOn = preferences[PreferencesKeys.KEEP_SCREEN_ON] ?: false,
-            wakeLockEnabled = preferences[PreferencesKeys.WAKE_LOCK_ENABLED] ?: false
+            wakeLockEnabled = preferences[PreferencesKeys.WAKE_LOCK_ENABLED] ?: false,
+            foregroundServiceEnabled = preferences[PreferencesKeys.FOREGROUND_SERVICE_ENABLED] ?: true
         )
     }
 
@@ -118,6 +120,12 @@ class SettingsDataStore(private val context: Context) {
             preferences[PreferencesKeys.WAKE_LOCK_ENABLED] = enabled
         }
     }
+
+    suspend fun saveForegroundServiceEnabled(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.FOREGROUND_SERVICE_ENABLED] = enabled
+        }
+    }
 }
 
 data class AppSettings(
@@ -128,5 +136,6 @@ data class AppSettings(
     val autoReconnect: Boolean = false,
     val autoConnectOnStartup: Boolean = false,
     val keepScreenOn: Boolean = false,
-    val wakeLockEnabled: Boolean = false
+    val wakeLockEnabled: Boolean = false,
+    val foregroundServiceEnabled: Boolean = true
 )

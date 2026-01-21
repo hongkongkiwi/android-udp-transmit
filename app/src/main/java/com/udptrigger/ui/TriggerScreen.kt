@@ -190,6 +190,9 @@ fun TriggerScreen(
                     wakeLockEnabled = state.wakeLockEnabled,
                     isWakeLockActive = state.isWakeLockActive,
                     onWakeLockChanged = { triggerViewModel.updateWakeLockEnabled(it) },
+                    foregroundServiceEnabled = state.foregroundServiceEnabled,
+                    isForegroundServiceActive = state.isForegroundServiceActive,
+                    onForegroundServiceChanged = { triggerViewModel.updateForegroundServiceEnabled(it) },
                     burstModeEnabled = state.burstMode.enabled,
                     burstPacketCount = state.burstMode.packetCount,
                     burstDelayMs = state.burstMode.delayMs,
@@ -1153,6 +1156,9 @@ fun SettingsSection(
     wakeLockEnabled: Boolean,
     isWakeLockActive: Boolean,
     onWakeLockChanged: (Boolean) -> Unit,
+    foregroundServiceEnabled: Boolean,
+    isForegroundServiceActive: Boolean,
+    onForegroundServiceChanged: (Boolean) -> Unit,
     burstModeEnabled: Boolean,
     burstPacketCount: Int,
     burstDelayMs: Long,
@@ -1328,6 +1334,39 @@ fun SettingsSection(
                 Switch(
                     checked = wakeLockEnabled,
                     onCheckedChange = onWakeLockChanged
+                )
+            }
+
+            HorizontalDivider()
+
+            // Foreground service toggle
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Background Service",
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    Text(
+                        text = if (isForegroundServiceActive) {
+                            "Running - app stays alive in background"
+                        } else {
+                            "Keep app active when screen is off or app backgrounded"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (isForegroundServiceActive) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+                        }
+                    )
+                }
+                Switch(
+                    checked = foregroundServiceEnabled,
+                    onCheckedChange = onForegroundServiceChanged
                 )
             }
 
