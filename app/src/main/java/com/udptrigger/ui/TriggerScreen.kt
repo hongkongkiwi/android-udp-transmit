@@ -224,6 +224,44 @@ fun TriggerScreen(
                 )
             }
 
+            // Scheduled trigger section
+            ScheduledTriggerSection(
+                enabled = state.scheduledTrigger.enabled,
+                intervalMs = state.scheduledTrigger.intervalMs,
+                packetCount = state.scheduledTrigger.packetCount,
+                packetsSent = state.scheduledTrigger.packetsSent,
+                isRunning = state.scheduledTrigger.isRunning,
+                onEnabledChanged = { enabled ->
+                    triggerViewModel.updateScheduledTrigger(
+                        enabled = enabled,
+                        intervalMs = state.scheduledTrigger.intervalMs,
+                        packetCount = state.scheduledTrigger.packetCount
+                    )
+                },
+                onIntervalChanged = { intervalMs ->
+                    triggerViewModel.updateScheduledTrigger(
+                        enabled = state.scheduledTrigger.enabled,
+                        intervalMs = intervalMs,
+                        packetCount = state.scheduledTrigger.packetCount
+                    )
+                },
+                onPacketCountChanged = { packetCount ->
+                    triggerViewModel.updateScheduledTrigger(
+                        enabled = state.scheduledTrigger.enabled,
+                        intervalMs = state.scheduledTrigger.intervalMs,
+                        packetCount = packetCount
+                    )
+                },
+                onStartStop = {
+                    if (state.scheduledTrigger.isRunning) {
+                        triggerViewModel.stopScheduledTrigger()
+                    } else {
+                        triggerViewModel.startScheduledTrigger()
+                    }
+                },
+                modifier = Modifier.padding(bottom = 24.dp)
+            )
+
             // Status indicator
             StatusIndicator(isConnected = state.isConnected, isNetworkAvailable = state.isNetworkAvailable)
 
@@ -1149,8 +1187,6 @@ fun ImportExportSection(
     onExportHistory: (Uri) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
-
     // File pickers
     val exportConfigLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json")
@@ -1266,6 +1302,143 @@ fun ImportExportSection(
                     exportHistoryLauncher.launch("udp_trigger_history_${System.currentTimeMillis()}.csv")
                 }) {
                     Text("Export")
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Scheduled Trigger Section - for automated packet sending
+ */
+@Composable
+fun ScheduledTriggerSection(
+    enabled: Boolean,
+    intervalMs: Long,
+    packetCount: Int,
+    packetsSent: Int,
+    isRunning: Boolean,
+    onEnabledChanged: (Boolean) -> Unit,
+    onIntervalChanged: (Long) -> Unit,
+    onPacketCountChanged: (Int) -> Unit,
+    onStartStop: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isRunning) {
+                MaterialTheme.colorScheme.primaryContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant
+            }
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Scheduled Trigger",
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Switch(
+                    checked = enabled,
+                    onCheckedChange = onEnabledChanged
+                )
+            }
+
+            if (enabled) {
+                HorizontalDivider()
+
+                // Interval settings
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Interval",
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                        Text(
+                            text = "${intervalMs}ms between packets",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                        )
+                    }
+                }
+
+                Slider(
+                    value = intervalMs.toFloat(),
+                    onValueChange = { onIntervalChanged(it.toLong()) },
+                    valueRange = 100f..10000f,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                // Packet count settings
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Packet Count",
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                        Text(
+                            text = if (packetCount == 0) "Infinite" else "$packetCount packets",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                        )
+                    }
+                }
+
+                Slider(
+                    value = packetCount.toFloat(),
+                    onValueChange = { onPacketCountChanged(it.toInt()) },
+                    valueRange = 0f..1000f,
+                    modifier = Modifier.fillMaxWidth(),
+                    steps = 100
+                )
+
+                HorizontalDivider()
+
+                // Status and controls
+                if (isRunning) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Running: $packetsSent sent",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Button(
+                            onClick = onStartStop,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.error
+                            )
+                        ) {
+                            Text("Stop")
+                        }
+                    }
+                } else {
+                    Button(
+                        onClick = onStartStop,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Start Scheduled Trigger")
+                    }
                 }
             }
         }
