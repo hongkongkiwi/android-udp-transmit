@@ -586,6 +586,20 @@ class TriggerViewModel(
      */
     fun getSequence(): Int = packetSequence
 
+    /**
+     * Get the device's IP address
+     */
+    fun getDeviceIpAddress(): String? {
+        return networkMonitor.getDeviceIpAddress()
+    }
+
+    /**
+     * Get all IP addresses of the device
+     */
+    fun getAllIpAddresses(): List<String> {
+        return networkMonitor.getAllIpAddresses()
+    }
+
     private fun hexStringToBytes(hex: String): ByteArray {
         // Remove any spaces or newlines
         val cleanHex = hex.replace("\\s".toRegex(), "")

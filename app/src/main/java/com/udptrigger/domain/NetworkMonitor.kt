@@ -82,4 +82,34 @@ class NetworkMonitor(private val context: Context) {
         }
         return null
     }
+
+    /**
+     * Get all IP addresses (IPv4) from all network interfaces
+     */
+    fun getAllIpAddresses(): List<String> {
+        val addresses = mutableListOf<String>()
+        try {
+            val interfaces = java.net.NetworkInterface.getNetworkInterfaces()?.toList() ?: return emptyList()
+            for (networkInterface in interfaces) {
+                if (networkInterface.isUp) {
+                    val interfaceAddresses = networkInterface.inetAddresses?.toList() ?: continue
+                    for (address in interfaceAddresses) {
+                        if (!address.isLoopbackAddress && address.hostAddress?.contains(':') == false) {
+                            addresses.add(address.hostAddress ?: "")
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            // Ignore
+        }
+        return addresses.distinct()
+    }
+
+    /**
+     * Get the device's primary IP address (first non-loopback IPv4)
+     */
+    fun getDeviceIpAddress(): String? {
+        return getIpAddress()
+    }
 }

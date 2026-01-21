@@ -19,15 +19,20 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import java.text.SimpleDateFormat
@@ -69,6 +74,7 @@ fun TriggerScreen(
     var showHistory by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var showAbout by remember { mutableStateOf(false) }
+    var showListenMode by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -98,6 +104,9 @@ fun TriggerScreen(
                     }
                     IconButton(onClick = { showHistory = !showHistory }) {
                         Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Packet History")
+                    }
+                    IconButton(onClick = { showListenMode = !showListenMode }) {
+                        Icon(Icons.Default.Info, contentDescription = "Listen Mode")
                     }
                     IconButton(onClick = { showSettings = !showSettings }) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings")
@@ -165,6 +174,21 @@ fun TriggerScreen(
                     burstDelayMs = state.burstMode.delayMs,
                     burstIsSending = state.burstMode.isSending,
                     onBurstModeChanged = { enabled, count, delay -> triggerViewModel.updateBurstMode(enabled, count, delay) },
+                    modifier = Modifier.padding(bottom = 24.dp)
+                )
+            }
+
+            // Listen mode section
+            if (showListenMode) {
+                val deviceIp = triggerViewModel.getDeviceIpAddress()
+                ListenModeSection(
+                    isListening = state.isListening,
+                    listenPort = state.listenPort ?: 5000,
+                    receivedPackets = state.receivedPackets,
+                    deviceIpAddress = deviceIp,
+                    onStartListening = { triggerViewModel.startListening(it) },
+                    onStopListening = { triggerViewModel.stopListening() },
+                    onClearReceived = { triggerViewModel.clearReceivedPackets() },
                     modifier = Modifier.padding(bottom = 24.dp)
                 )
             }
@@ -1302,3 +1326,290 @@ fun ErrorCard(error: String) {
         }
     }
 }
+
+/**
+ * Listen Mode Section - for receiving UDP packets
+ */
+@Composable
+fun ListenModeSection(
+    isListening: Boolean,
+    listenPort: Int,
+    receivedPackets: List<com.udptrigger.ui.ReceivedPacketInfo>,
+    deviceIpAddress: String?,
+    onStartListening: (Int) -> Unit,
+    onStopListening: () -> Unit,
+    onClearReceived: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var portInput by remember { mutableStateOf(listenPort.toString()) }
+    var showHexView by remember { mutableStateOf(false) }
+
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isListening) {
+                MaterialTheme.colorScheme.secondaryContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant
+            }
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // Header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = if (isListening) Icons.Filled.CheckCircle else Icons.Default.Info,
+                        contentDescription = null,
+                        tint = if (isListening) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "UDP Listen Mode",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                }
+
+                if (isListening) {
+                    Text(
+                        text = "Listening",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+
+            // Device IP Address Display
+            deviceIpAddress?.let { ip ->
+                val clipboardManager = LocalClipboardManager.current
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "This Device IP",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            )
+                            Text(
+                                text = ip,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                        IconButton(
+                            onClick = {
+                                clipboardManager.setText(AnnotatedString(ip))
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Share,
+                                contentDescription = "Copy IP address",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Port Input and Control
+            if (!isListening) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = portInput,
+                        onValueChange = { input ->
+                            portInput = input.filter { it.isDigit() }
+                        },
+                        label = { Text("Listen Port") },
+                        placeholder = { Text("e.g., 5000") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                    )
+
+                    Button(
+                        onClick = {
+                            val port = portInput.toIntOrNull()
+                            if (port != null && port in 1024..65535) {
+                                onStartListening(port)
+                            }
+                        },
+                        enabled = portInput.toIntOrNull()?.let { it in 1024..65535 } == true
+                    ) {
+                        Text("Start Listening")
+                    }
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "Listening on port $listenPort",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Button(
+                        onClick = onStopListening,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error
+                        )
+                    ) {
+                        Text("Stop")
+                    }
+                }
+            }
+
+            // Received Packets Section
+            if (receivedPackets.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Received Packets (${receivedPackets.size})",
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(
+                                selected = showHexView,
+                                onClick = { showHexView = !showHexView },
+                                label = { Text(if (showHexView) "Hex" else "Text") },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = if (showHexView) Icons.Outlined.Share else Icons.Default.Info,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            )
+                            TextButton(onClick = onClearReceived) {
+                                Text("Clear")
+                            }
+                        }
+                    }
+
+                    // Received packets list
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(200.dp)
+                    ) {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            items(receivedPackets.take(20)) { packet ->
+                                ReceivedPacketItem(packet, showHexView)
+                            }
+                        }
+                    }
+
+                    if (receivedPackets.size > 20) {
+                        Text(
+                            text = "Showing 20 of ${receivedPackets.size} packets",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            modifier = Modifier.align(Alignment.CenterHorizontally)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Display item for a received UDP packet
+ */
+@Composable
+fun ReceivedPacketItem(
+    packet: com.udptrigger.ui.ReceivedPacketInfo,
+    showHexView: Boolean
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = packet.sourceAddress,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = ":${packet.sourcePort}",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace
+                )
+                Text(
+                    text = "${packet.length}B",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                )
+            }
+
+            val displayData = if (showHexView) {
+                // Convert to hex
+                packet.data.toByteArray().joinToString(" ") { byte ->
+                    String.format("%02X", byte)
+                }
+            } else {
+                packet.data
+            }
+
+            Text(
+                text = displayData,
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = if (showHexView) FontFamily.Monospace else null,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            Text(
+                text = java.text.SimpleDateFormat("HH:mm:ss.SSS").format(java.util.Date(packet.timestamp)),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+            )
+        }
+    }
+}
+
