@@ -75,7 +75,16 @@ data class TriggerState(
     val autoReconnect: Boolean = false,
     val keepScreenOn: Boolean = false,
     val isNetworkAvailable: Boolean = true,
-    val burstMode: BurstMode = BurstMode()
+    val burstMode: BurstMode = BurstMode(),
+    val scheduledTrigger: ScheduledTrigger = ScheduledTrigger()
+)
+
+data class ScheduledTrigger(
+    val enabled: Boolean = false,
+    val intervalMs: Long = 1000,
+    val packetCount: Int = 0, // 0 = infinite
+    val packetsSent: Int = 0,
+    val isRunning: Boolean = false
 )
 
 data class BurstMode(
@@ -747,8 +756,140 @@ class TriggerViewModel(
         )
     }
 
+    // Scheduled Trigger Mode
+
+    private var scheduledTriggerJob: kotlinx.coroutines.Job? = null
+
+    /**
+     * Update scheduled trigger settings
+     */
+    fun updateScheduledTrigger(enabled: Boolean, intervalMs: Long, packetCount: Int) {
+        _state.value = _state.value.copy(
+            scheduledTrigger = _state.value.scheduledTrigger.copy(
+                enabled = enabled,
+                intervalMs = intervalMs.coerceIn(100, 3600000), // 100ms to 1 hour
+                packetCount = packetCount.coerceIn(0, 10000) // 0 = infinite, max 10000
+            )
+        )
+
+        // Update running job if settings changed while running
+        if (_state.value.scheduledTrigger.isRunning) {
+            stopScheduledTrigger()
+            startScheduledTrigger()
+        }
+    }
+
+    /**
+     * Start scheduled trigger mode
+     */
+    fun startScheduledTrigger() {
+        if (!_state.value.isConnected) {
+            _state.value = _state.value.copy(error = "Cannot start scheduled trigger: not connected")
+            return
+        }
+
+        if (_state.value.scheduledTrigger.isRunning) return
+
+        _state.value = _state.value.copy(
+            scheduledTrigger = _state.value.scheduledTrigger.copy(
+                isRunning = true,
+                packetsSent = 0
+            )
+        )
+
+        scheduledTriggerJob = viewModelScope.launch {
+            while (_state.value.scheduledTrigger.isRunning) {
+                // Check if we've reached the packet count limit
+                if (_state.value.scheduledTrigger.packetCount > 0 &&
+                    _state.value.scheduledTrigger.packetsSent >= _state.value.scheduledTrigger.packetCount) {
+                    stopScheduledTrigger()
+                    break
+                }
+
+                // Send the trigger
+                triggerInternal()
+
+                // Update packets sent counter
+                _state.value = _state.value.copy(
+                    scheduledTrigger = _state.value.scheduledTrigger.copy(
+                        packetsSent = _state.value.scheduledTrigger.packetsSent + 1
+                    )
+                )
+
+                // Wait for the interval (or stop if cancelled)
+                kotlinx.coroutines.delay(_state.value.scheduledTrigger.intervalMs)
+            }
+        }
+    }
+
+    /**
+     * Stop scheduled trigger mode
+     */
+    fun stopScheduledTrigger() {
+        if (!_state.value.scheduledTrigger.isRunning) return
+
+        scheduledTriggerJob?.cancel()
+        scheduledTriggerJob = null
+
+        _state.value = _state.value.copy(
+            scheduledTrigger = _state.value.scheduledTrigger.copy(
+                isRunning = false,
+                packetsSent = 0
+            )
+        )
+    }
+
+    /**
+     * Internal trigger method that bypasses rate limiting for scheduled triggers
+     */
+    private fun triggerInternal() {
+        viewModelScope.launch {
+            val timestamp = System.nanoTime()
+            val message = buildPacketMessage(timestamp, 0)
+            val result = withContext(Dispatchers.IO) {
+                udpClient.send(message)
+            }
+            result.fold(
+                onSuccess = {
+                    triggerHapticFeedback()
+                    playSoundEffect()
+                    val newEntry = PacketHistoryEntry(
+                        timestamp = System.currentTimeMillis(),
+                        nanoTime = timestamp,
+                        success = true,
+                        type = PacketType.SENT
+                    )
+                    val updatedHistory = (listOf(newEntry) + _state.value.packetHistory).take(100)
+                    _state.value = _state.value.copy(
+                        lastTriggerTime = System.currentTimeMillis(),
+                        lastTimestamp = timestamp,
+                        error = null,
+                        packetHistory = updatedHistory,
+                        totalPacketsSent = _state.value.totalPacketsSent + 1
+                    )
+                },
+                onFailure = { e ->
+                    val newEntry = PacketHistoryEntry(
+                        timestamp = System.currentTimeMillis(),
+                        nanoTime = timestamp,
+                        success = false,
+                        errorMessage = e.message,
+                        type = PacketType.SENT
+                    )
+                    val updatedHistory = (listOf(newEntry) + _state.value.packetHistory).take(100)
+                    _state.value = _state.value.copy(
+                        error = "Send failed: ${e.message}",
+                        packetHistory = updatedHistory,
+                        totalPacketsFailed = _state.value.totalPacketsFailed + 1
+                    )
+                }
+            )
+        }
+    }
+
     override fun onCleared() {
         super.onCleared()
+        scheduledTriggerJob?.cancel()
         udpClient.closeSync()
         soundManager.release()
     }
