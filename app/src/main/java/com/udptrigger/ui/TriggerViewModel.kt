@@ -1,6 +1,7 @@
 package com.udptrigger.ui
 
 import android.content.Context
+import android.net.Uri
 import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -1037,5 +1038,92 @@ class TriggerViewModel(
             history = _state.value.packetHistory,
             outputStream = outputStream
         )
+    }
+
+    /**
+     * Export configuration to Uri (for file picker)
+     */
+    suspend fun exportConfig(uri: Uri) {
+        try {
+            val outputStream = context.contentResolver.openOutputStream(uri)
+            if (outputStream != null) {
+                exportData(outputStream).fold(
+                    onSuccess = {
+                        _state.value = _state.value.copy(error = null)
+                    },
+                    onFailure = { e ->
+                        _state.value = _state.value.copy(
+                            error = "Export failed: ${e.message}"
+                        )
+                    }
+                )
+            } else {
+                _state.value = _state.value.copy(
+                    error = "Failed to open output stream"
+                )
+            }
+        } catch (e: Exception) {
+            _state.value = _state.value.copy(
+                error = "Export failed: ${e.message}"
+            )
+        }
+    }
+
+    /**
+     * Import configuration from Uri (for file picker)
+     */
+    suspend fun importConfig(uri: Uri) {
+        try {
+            val inputStream = context.contentResolver.openInputStream(uri)
+            if (inputStream != null) {
+                importData(inputStream).fold(
+                    onSuccess = {
+                        _state.value = _state.value.copy(error = null)
+                    },
+                    onFailure = { e ->
+                        _state.value = _state.value.copy(
+                            error = "Import failed: ${e.message}"
+                        )
+                    }
+                )
+            } else {
+                _state.value = _state.value.copy(
+                    error = "Failed to open input stream"
+                )
+            }
+        } catch (e: Exception) {
+            _state.value = _state.value.copy(
+                error = "Import failed: ${e.message}"
+            )
+        }
+    }
+
+    /**
+     * Export packet history to CSV via Uri (for file picker)
+     */
+    suspend fun exportHistoryToCsv(uri: Uri) {
+        try {
+            val outputStream = context.contentResolver.openOutputStream(uri)
+            if (outputStream != null) {
+                exportHistoryToCsv(outputStream).fold(
+                    onSuccess = {
+                        _state.value = _state.value.copy(error = null)
+                    },
+                    onFailure = { e ->
+                        _state.value = _state.value.copy(
+                            error = "Export failed: ${e.message}"
+                        )
+                    }
+                )
+            } else {
+                _state.value = _state.value.copy(
+                    error = "Failed to open output stream"
+                )
+            }
+        } catch (e: Exception) {
+            _state.value = _state.value.copy(
+                error = "Export failed: ${e.message}"
+            )
+        }
     }
 }

@@ -1,7 +1,10 @@
 package com.udptrigger.ui
 
 import android.content.Context
+import android.net.Uri
 import android.view.WindowManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -23,6 +26,7 @@ import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -75,6 +79,7 @@ fun TriggerScreen(
     var showSettings by remember { mutableStateOf(false) }
     var showAbout by remember { mutableStateOf(false) }
     var showListenMode by remember { mutableStateOf(false) }
+    var showImportExport by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -107,6 +112,9 @@ fun TriggerScreen(
                     }
                     IconButton(onClick = { showListenMode = !showListenMode }) {
                         Icon(Icons.Default.Info, contentDescription = "Listen Mode")
+                    }
+                    IconButton(onClick = { showImportExport = !showImportExport }) {
+                        Icon(Icons.Outlined.Share, contentDescription = "Import/Export")
                     }
                     IconButton(onClick = { showSettings = !showSettings }) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings")
@@ -174,6 +182,29 @@ fun TriggerScreen(
                     burstDelayMs = state.burstMode.delayMs,
                     burstIsSending = state.burstMode.isSending,
                     onBurstModeChanged = { enabled, count, delay -> triggerViewModel.updateBurstMode(enabled, count, delay) },
+                    modifier = Modifier.padding(bottom = 24.dp)
+                )
+            }
+
+            // Import/Export section
+            if (showImportExport) {
+                val coroutineScope = rememberCoroutineScope()
+                ImportExportSection(
+                    onExportConfig = { uri ->
+                        coroutineScope.launch {
+                            triggerViewModel.exportConfig(uri)
+                        }
+                    },
+                    onImportConfig = { uri ->
+                        coroutineScope.launch {
+                            triggerViewModel.importConfig(uri)
+                        }
+                    },
+                    onExportHistory = { uri ->
+                        coroutineScope.launch {
+                            triggerViewModel.exportHistoryToCsv(uri)
+                        }
+                    },
                     modifier = Modifier.padding(bottom = 24.dp)
                 )
             }
@@ -1102,6 +1133,139 @@ fun SettingsSection(
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                         )
                     }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Import/Export Section - for data portability
+ */
+@Composable
+fun ImportExportSection(
+    onExportConfig: (Uri) -> Unit,
+    onImportConfig: (Uri) -> Unit,
+    onExportHistory: (Uri) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+
+    // File pickers
+    val exportConfigLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) {
+            onExportConfig(uri)
+        }
+    }
+
+    val importConfigLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            onImportConfig(uri)
+        }
+    }
+
+    val exportHistoryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri ->
+        if (uri != null) {
+            onExportHistory(uri)
+        }
+    }
+
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.tertiaryContainer
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = "Import / Export",
+                style = MaterialTheme.typography.titleMedium
+            )
+
+            HorizontalDivider()
+
+            // Export Configuration
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Export Configuration",
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    Text(
+                        text = "Save settings and presets to JSON",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.7f)
+                    )
+                }
+                Button(onClick = {
+                    exportConfigLauncher.launch("udp_trigger_config_${System.currentTimeMillis()}.json")
+                }) {
+                    Text("Export")
+                }
+            }
+
+            HorizontalDivider()
+
+            // Import Configuration
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Import Configuration",
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    Text(
+                        text = "Load settings and presets from JSON",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.7f)
+                    )
+                }
+                Button(onClick = {
+                    importConfigLauncher.launch(arrayOf("*/*"))
+                }) {
+                    Text("Import")
+                }
+            }
+
+            HorizontalDivider()
+
+            // Export Packet History
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Export History",
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    Text(
+                        text = "Save packet history to CSV",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.7f)
+                    )
+                }
+                Button(onClick = {
+                    exportHistoryLauncher.launch("udp_trigger_history_${System.currentTimeMillis()}.csv")
+                }) {
+                    Text("Export")
                 }
             }
         }
