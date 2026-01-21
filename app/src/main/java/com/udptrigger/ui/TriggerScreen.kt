@@ -12,11 +12,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
@@ -69,7 +69,6 @@ fun TriggerScreen(
     var showHistory by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var showAbout by remember { mutableStateOf(false) }
-    var showPresets by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -98,7 +97,7 @@ fun TriggerScreen(
                         )
                     }
                     IconButton(onClick = { showHistory = !showHistory }) {
-                        Icon(Icons.Default.List, contentDescription = "Packet History")
+                        Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Packet History")
                     }
                     IconButton(onClick = { showSettings = !showSettings }) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings")
@@ -852,7 +851,7 @@ fun SettingsSection(
     burstModeEnabled: Boolean,
     burstPacketCount: Int,
     burstDelayMs: Long,
-    burstIsSending: Boolean,
+    @Suppress("UNUSED_PARAMETER") burstIsSending: Boolean,
     onBurstModeChanged: (Boolean, Int, Long) -> Unit,
     modifier: Modifier = Modifier
 ) {

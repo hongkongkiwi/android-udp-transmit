@@ -1,10 +1,9 @@
 package com.udptrigger.domain
 
-import android.content.Context
 import android.media.SoundPool
 import android.os.Build
 
-class SoundManager(context: Context) {
+class SoundManager(@Suppress("UNUSED_PARAMETER") context: android.content.Context) {
 
     private val soundPool: SoundPool = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
         SoundPool.Builder().setMaxStreams(1).build()
