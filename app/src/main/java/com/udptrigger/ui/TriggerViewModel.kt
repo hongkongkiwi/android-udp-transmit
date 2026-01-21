@@ -74,10 +74,12 @@ data class TriggerState(
     val rateLimitMs: Long = 50,
     val rateLimitEnabled: Boolean = true,
     val autoReconnect: Boolean = false,
+    val autoConnectOnStartup: Boolean = false,
     val keepScreenOn: Boolean = false,
     val isNetworkAvailable: Boolean = true,
     val burstMode: BurstMode = BurstMode(),
-    val scheduledTrigger: ScheduledTrigger = ScheduledTrigger()
+    val scheduledTrigger: ScheduledTrigger = ScheduledTrigger(),
+    val lastTriggered: Long = 0
 )
 
 data class ScheduledTrigger(
@@ -185,8 +187,15 @@ class TriggerViewModel(
                     rateLimitEnabled = savedSettings.rateLimitEnabled,
                     rateLimitMs = savedSettings.rateLimitMs,
                     autoReconnect = savedSettings.autoReconnect,
+                    autoConnectOnStartup = savedSettings.autoConnectOnStartup,
                     keepScreenOn = savedSettings.keepScreenOn
                 )
+
+                // Auto-connect on startup if enabled
+                if (savedSettings.autoConnectOnStartup && networkMonitor.isCurrentlyConnected()) {
+                    kotlinx.coroutines.delay(500) // Small delay to ensure network is ready
+                    connect()
+                }
             } catch (e: Exception) {
                 // Use defaults if loading fails
             }
@@ -311,6 +320,13 @@ class TriggerViewModel(
         _state.value = _state.value.copy(autoReconnect = enabled)
         viewModelScope.launch {
             dataStore.saveAutoReconnect(enabled)
+        }
+    }
+
+    fun updateAutoConnectOnStartup(enabled: Boolean) {
+        _state.value = _state.value.copy(autoConnectOnStartup = enabled)
+        viewModelScope.launch {
+            dataStore.saveAutoConnectOnStartup(enabled)
         }
     }
 
@@ -447,6 +463,9 @@ class TriggerViewModel(
             )
             return
         }
+
+        // Set trigger time for animation
+        _state.value = _state.value.copy(lastTriggered = System.currentTimeMillis())
 
         viewModelScope.launch {
             val timestamp = System.nanoTime()

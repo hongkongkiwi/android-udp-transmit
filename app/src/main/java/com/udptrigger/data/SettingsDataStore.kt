@@ -20,11 +20,15 @@ class SettingsDataStore(private val context: Context) {
         val HOST = stringPreferencesKey("host")
         val PORT = intPreferencesKey("port")
         val PACKET_CONTENT = stringPreferencesKey("packet_content")
+        val HEX_MODE = booleanPreferencesKey("hex_mode")
+        val INCLUDE_TIMESTAMP = booleanPreferencesKey("include_timestamp")
+        val INCLUDE_BURST_INDEX = booleanPreferencesKey("include_burst_index")
         val HAPTIC_FEEDBACK = booleanPreferencesKey("haptic_feedback")
         val SOUND_ENABLED = booleanPreferencesKey("sound_enabled")
         val RATE_LIMIT_ENABLED = booleanPreferencesKey("rate_limit_enabled")
         val RATE_LIMIT_MS = intPreferencesKey("rate_limit_ms")
         val AUTO_RECONNECT = booleanPreferencesKey("auto_reconnect")
+        val AUTO_CONNECT_ON_STARTUP = booleanPreferencesKey("auto_connect_on_startup")
         val KEEP_SCREEN_ON = booleanPreferencesKey("keep_screen_on")
     }
 
@@ -32,7 +36,10 @@ class SettingsDataStore(private val context: Context) {
         UdpConfig(
             host = preferences[PreferencesKeys.HOST] ?: "192.168.1.100",
             port = preferences[PreferencesKeys.PORT] ?: 5000,
-            packetContent = preferences[PreferencesKeys.PACKET_CONTENT] ?: "TRIGGER"
+            packetContent = preferences[PreferencesKeys.PACKET_CONTENT] ?: "TRIGGER",
+            hexMode = preferences[PreferencesKeys.HEX_MODE] ?: false,
+            includeTimestamp = preferences[PreferencesKeys.INCLUDE_TIMESTAMP] ?: true,
+            includeBurstIndex = preferences[PreferencesKeys.INCLUDE_BURST_INDEX] ?: false
         )
     }
 
@@ -43,6 +50,7 @@ class SettingsDataStore(private val context: Context) {
             rateLimitEnabled = preferences[PreferencesKeys.RATE_LIMIT_ENABLED] ?: true,
             rateLimitMs = (preferences[PreferencesKeys.RATE_LIMIT_MS] ?: 50).toLong(),
             autoReconnect = preferences[PreferencesKeys.AUTO_RECONNECT] ?: false,
+            autoConnectOnStartup = preferences[PreferencesKeys.AUTO_CONNECT_ON_STARTUP] ?: false,
             keepScreenOn = preferences[PreferencesKeys.KEEP_SCREEN_ON] ?: false
         )
     }
@@ -52,6 +60,17 @@ class SettingsDataStore(private val context: Context) {
             preferences[PreferencesKeys.HOST] = config.host
             preferences[PreferencesKeys.PORT] = config.port
             preferences[PreferencesKeys.PACKET_CONTENT] = config.packetContent
+            preferences[PreferencesKeys.HEX_MODE] = config.hexMode
+            preferences[PreferencesKeys.INCLUDE_TIMESTAMP] = config.includeTimestamp
+            preferences[PreferencesKeys.INCLUDE_BURST_INDEX] = config.includeBurstIndex
+        }
+    }
+
+    suspend fun savePacketOptions(hexMode: Boolean, includeTimestamp: Boolean, includeBurstIndex: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.HEX_MODE] = hexMode
+            preferences[PreferencesKeys.INCLUDE_TIMESTAMP] = includeTimestamp
+            preferences[PreferencesKeys.INCLUDE_BURST_INDEX] = includeBurstIndex
         }
     }
 
@@ -80,6 +99,12 @@ class SettingsDataStore(private val context: Context) {
         }
     }
 
+    suspend fun saveAutoConnectOnStartup(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.AUTO_CONNECT_ON_STARTUP] = enabled
+        }
+    }
+
     suspend fun saveKeepScreenOn(enabled: Boolean) {
         context.dataStore.edit { preferences ->
             preferences[PreferencesKeys.KEEP_SCREEN_ON] = enabled
@@ -93,5 +118,6 @@ data class AppSettings(
     val rateLimitEnabled: Boolean = true,
     val rateLimitMs: Long = 50,
     val autoReconnect: Boolean = false,
+    val autoConnectOnStartup: Boolean = false,
     val keepScreenOn: Boolean = false
 )

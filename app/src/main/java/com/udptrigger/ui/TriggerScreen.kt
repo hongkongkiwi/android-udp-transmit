@@ -29,6 +29,7 @@ import androidx.compose.ui.Alignment
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -175,6 +176,8 @@ fun TriggerScreen(
                     onRateLimitChanged = { enabled, ms -> triggerViewModel.updateRateLimit(enabled, ms) },
                     autoReconnect = state.autoReconnect,
                     onAutoReconnectChanged = { triggerViewModel.updateAutoReconnect(it) },
+                    autoConnectOnStartup = state.autoConnectOnStartup,
+                    onAutoConnectOnStartupChanged = { triggerViewModel.updateAutoConnectOnStartup(it) },
                     keepScreenOn = state.keepScreenOn,
                     onKeepScreenOnChanged = { triggerViewModel.updateKeepScreenOn(it) },
                     burstModeEnabled = state.burstMode.enabled,
@@ -404,9 +407,22 @@ fun TriggerScreen(
                 }
             } else {
                 // Single trigger mode
+                val isPressed = remember { mutableStateOf(false) }
+                val wasTriggered = remember(state.lastTriggered) { state.lastTriggered > 0 }
+
+                LaunchedEffect(state.lastTriggered) {
+                    if (state.lastTriggered > 0) {
+                        isPressed.value = true
+                        kotlinx.coroutines.delay(150)
+                        isPressed.value = false
+                    }
+                }
+
                 Button(
                     onClick = { triggerViewModel.trigger() },
-                    modifier = Modifier.size(200.dp),
+                    modifier = Modifier
+                        .size(200.dp)
+                        .scale(if (isPressed.value) 0.95f else 1f),
                     enabled = state.isConnected,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.primary
@@ -945,6 +961,8 @@ fun SettingsSection(
     onRateLimitChanged: (Boolean, Long) -> Unit,
     autoReconnect: Boolean,
     onAutoReconnectChanged: (Boolean) -> Unit,
+    autoConnectOnStartup: Boolean,
+    onAutoConnectOnStartupChanged: (Boolean) -> Unit,
     keepScreenOn: Boolean,
     onKeepScreenOnChanged: (Boolean) -> Unit,
     burstModeEnabled: Boolean,
@@ -1039,6 +1057,31 @@ fun SettingsSection(
                 Switch(
                     checked = autoReconnect,
                     onCheckedChange = onAutoReconnectChanged
+                )
+            }
+
+            HorizontalDivider()
+
+            // Auto connect on startup toggle
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Auto Connect on Startup",
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    Text(
+                        text = "Automatically connect when app starts",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+                    )
+                }
+                Switch(
+                    checked = autoConnectOnStartup,
+                    onCheckedChange = onAutoConnectOnStartupChanged
                 )
             }
 
