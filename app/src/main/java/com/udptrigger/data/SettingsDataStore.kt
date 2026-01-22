@@ -32,6 +32,11 @@ class SettingsDataStore(private val context: Context) {
         val KEEP_SCREEN_ON = booleanPreferencesKey("keep_screen_on")
         val WAKE_LOCK_ENABLED = booleanPreferencesKey("wake_lock_enabled")
         val FOREGROUND_SERVICE_ENABLED = booleanPreferencesKey("foreground_service_enabled")
+        val HEALTH_CHECK_ENABLED = booleanPreferencesKey("health_check_enabled")
+        val HISTORY_LIMIT = intPreferencesKey("history_limit")
+        val LAST_WAS_CONNECTED = booleanPreferencesKey("last_was_connected")
+        val LAST_CONNECTED_HOST = stringPreferencesKey("last_connected_host")
+        val LAST_CONNECTED_PORT = intPreferencesKey("last_connected_port")
     }
 
     val configFlow: Flow<UdpConfig> = context.dataStore.data.map { preferences ->
@@ -55,7 +60,9 @@ class SettingsDataStore(private val context: Context) {
             autoConnectOnStartup = preferences[PreferencesKeys.AUTO_CONNECT_ON_STARTUP] ?: false,
             keepScreenOn = preferences[PreferencesKeys.KEEP_SCREEN_ON] ?: false,
             wakeLockEnabled = preferences[PreferencesKeys.WAKE_LOCK_ENABLED] ?: false,
-            foregroundServiceEnabled = preferences[PreferencesKeys.FOREGROUND_SERVICE_ENABLED] ?: true
+            foregroundServiceEnabled = preferences[PreferencesKeys.FOREGROUND_SERVICE_ENABLED] ?: true,
+            healthCheckEnabled = preferences[PreferencesKeys.HEALTH_CHECK_ENABLED] ?: true,
+            historyLimit = preferences[PreferencesKeys.HISTORY_LIMIT] ?: 1000
         )
     }
 
@@ -126,7 +133,62 @@ class SettingsDataStore(private val context: Context) {
             preferences[PreferencesKeys.FOREGROUND_SERVICE_ENABLED] = enabled
         }
     }
+
+    suspend fun saveHealthCheckEnabled(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.HEALTH_CHECK_ENABLED] = enabled
+        }
+    }
+
+    suspend fun saveHistoryLimit(limit: Int) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.HISTORY_LIMIT] = limit
+        }
+    }
+
+    /**
+     * Save the last successful connection state
+     */
+    suspend fun saveLastConnection(host: String, port: Int) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.LAST_WAS_CONNECTED] = true
+            preferences[PreferencesKeys.LAST_CONNECTED_HOST] = host
+            preferences[PreferencesKeys.LAST_CONNECTED_PORT] = port
+        }
+    }
+
+    /**
+     * Clear the last connection state (when user disconnects)
+     */
+    suspend fun clearLastConnection() {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.LAST_WAS_CONNECTED] = false
+        }
+    }
+
+    /**
+     * Flow for last connection state
+     */
+    val lastConnectionFlow: Flow<LastConnectionInfo?> = context.dataStore.data.map { preferences ->
+        val wasConnected = preferences[PreferencesKeys.LAST_WAS_CONNECTED] ?: false
+        if (wasConnected) {
+            LastConnectionInfo(
+                host = preferences[PreferencesKeys.LAST_CONNECTED_HOST] ?: "192.168.1.100",
+                port = preferences[PreferencesKeys.LAST_CONNECTED_PORT] ?: 5000
+            )
+        } else {
+            null
+        }
+    }
 }
+
+/**
+ * Information about the last successful connection
+ */
+data class LastConnectionInfo(
+    val host: String,
+    val port: Int
+)
 
 data class AppSettings(
     val hapticFeedbackEnabled: Boolean = true,
@@ -137,5 +199,7 @@ data class AppSettings(
     val autoConnectOnStartup: Boolean = false,
     val keepScreenOn: Boolean = false,
     val wakeLockEnabled: Boolean = false,
-    val foregroundServiceEnabled: Boolean = true
+    val foregroundServiceEnabled: Boolean = true,
+    val healthCheckEnabled: Boolean = true,
+    val historyLimit: Int = 1000
 )

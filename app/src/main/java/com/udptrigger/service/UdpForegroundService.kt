@@ -12,6 +12,7 @@ import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.udptrigger.MainActivity
+import com.udptrigger.R
 
 /**
  * Foreground service that keeps the UDP trigger app alive in the background.
@@ -119,13 +120,13 @@ class UdpForegroundService : Service() {
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("UDP Trigger Active")
             .setContentText(statusText)
-            .setSmallIcon(android.R.drawable.ic_menu_send)
+            .setSmallIcon(R.drawable.ic_notification_send)
             .setContentIntent(pendingIntent)
             .setOngoing(true) // Cannot be swiped away
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .addAction(
-                android.R.drawable.ic_menu_close_clear_cancel,
+                R.drawable.ic_notification_stop,
                 "Stop",
                 stopPendingIntent
             )

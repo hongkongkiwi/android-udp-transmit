@@ -1,6 +1,7 @@
 package com.udptrigger
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -126,6 +127,18 @@ class MainActivity : ComponentActivity() {
     private val keyEventDispatcher = KeyEventDispatcher()
     private val permissionRequester = PermissionRequester(this)
 
+    // Intent action state for automation integration
+    var pendingIntentAction: String? = null
+        private set
+
+    // Companion object for constants
+    companion object {
+        const val ACTION_CONNECT = "com.udptrigger.CONNECT"
+        const val ACTION_DISCONNECT = "com.udptrigger.DISCONNECT"
+        const val EXTRA_AUTO_CONNECT = "auto_connect"
+        const val EXTRA_AUTO_DISCONNECT = "auto_disconnect"
+    }
+
     /**
      * Intercept ALL key events including volume keys, media keys, and hardware buttons.
      * This is called before any other handlers and captures keys that OnKeyListener misses.
@@ -142,6 +155,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Initialize crash reporter first
+        com.udptrigger.util.CrashReporterSingleton.initialize(this)
+        // Check for pending intent actions from automation
+        handleIntentAction(intent)
         enableEdgeToEdge()
         setContent {
             // Provide the key event dispatcher and permission requester to all composables
@@ -154,9 +171,35 @@ class MainActivity : ComponentActivity() {
                         modifier = Modifier.fillMaxSize(),
                         color = MaterialTheme.colorScheme.background
                     ) {
-                        TriggerScreen()
+                        TriggerScreen(pendingIntentAction = pendingIntentAction)
                     }
                 }
+            }
+        }
+    }
+
+    /**
+     * Handle new intents, including widget trigger requests and automation actions
+     */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleIntentAction(intent)
+    }
+
+    private fun handleIntentAction(intent: Intent?) {
+        when (intent?.action) {
+            ACTION_CONNECT -> {
+                if (intent.getBooleanExtra(EXTRA_AUTO_CONNECT, false)) {
+                    pendingIntentAction = EXTRA_AUTO_CONNECT
+                }
+            }
+            ACTION_DISCONNECT -> {
+                if (intent.getBooleanExtra(EXTRA_AUTO_DISCONNECT, false)) {
+                    pendingIntentAction = EXTRA_AUTO_DISCONNECT
+                }
+            }
+            "com.udptrigger.TRIGGER_UDP" -> {
+                // Widget trigger - handled in TriggerScreen
             }
         }
     }

@@ -43,6 +43,11 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Handle widget trigger action -->
+            <intent-filter>
+                <action android:name="com.udptrigger.TRIGGER_UDP" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
         </activity>
 
         <!-- Foreground service for background UDP operation -->
@@ -56,6 +61,43 @@
                 <action android:name="com.udptrigger.STOP_SERVICE" />
             </intent-filter>
         </service>
+
+        <!-- Glance App Widget -->
+        <receiver
+            android:name=".widget.TriggerGlanceReceiver"
+            android:enabled="@bool/glance_appwidget_enabled"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.udptrigger.UPDATE_CONNECTION" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/glance_widget_info" />
+        </receiver>
+
+        <!-- Widget Trigger Receiver -->
+        <receiver
+            android:name=".widget.WidgetTriggerReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.udptrigger.TRIGGER_UDP" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Automation Integration Receiver (Tasker, MacroDroid, etc.) -->
+        <receiver
+            android:name=".receiver.UdpIntentReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.udptrigger.SEND_PACKET" />
+                <action android:name="com.udptrigger.CONNECT" />
+                <action android:name="com.udptrigger.DISCONNECT" />
+                <action android:name="com.udptrigger.GET_CONNECTION_STATUS" />
+            </intent-filter>
+        </receiver>
 
     </application>
 

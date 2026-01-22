@@ -41,6 +41,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogWindowProvider
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -64,7 +65,8 @@ fun Context.findActivity(): Activity {
 fun TriggerScreen(
     triggerViewModel: TriggerViewModel = viewModel(
         factory = TriggerViewModelFactory(LocalContext.current)
-    )
+    ),
+    pendingIntentAction: String? = null
 ) {
     val state by triggerViewModel.state.collectAsState()
     val context = LocalContext.current
@@ -86,6 +88,9 @@ fun TriggerScreen(
     var showAbout by remember { mutableStateOf(false) }
     var showListenMode by remember { mutableStateOf(false) }
     var showImportExport by remember { mutableStateOf(false) }
+    var showCrashReports by remember { mutableStateOf(false) }
+    var showAnalytics by remember { mutableStateOf(false) }
+    var showNetworkDiscovery by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -556,7 +561,38 @@ fun TriggerScreen(
 
     // About dialog
     if (showAbout) {
-        AboutDialog(onDismiss = { showAbout = false })
+        AboutDialog(
+            onDismiss = { showAbout = false },
+            onShowCrashReports = { showCrashReports = true },
+            onShowAnalytics = { showAnalytics = true },
+            onShowNetworkDiscovery = { showNetworkDiscovery = true }
+        )
+    }
+
+    if (showCrashReports) {
+        CrashReportsDialog(
+            onDismiss = { showCrashReports = false },
+            context = context
+        )
+    }
+
+    if (showAnalytics) {
+        AnalyticsDialog(
+            onDismiss = { showAnalytics = false },
+            context = context
+        )
+    }
+
+    if (showNetworkDiscovery) {
+        NetworkDiscoveryDialog(
+            onDismiss = { showNetworkDiscovery = false },
+            context = context,
+            onConnectToDevice = { host, port ->
+                triggerViewModel.updateConfig(state.config.copy(host = host, port = port))
+                triggerViewModel.connect()
+                showNetworkDiscovery = false
+            }
+        )
     }
 
     // Transparent key event listener overlay
@@ -574,7 +610,12 @@ fun TriggerScreen(
 }
 
 @Composable
-fun AboutDialog(onDismiss: () -> Unit) {
+fun AboutDialog(
+    onDismiss: () -> Unit,
+    onShowCrashReports: () -> Unit = {},
+    onShowAnalytics: () -> Unit = {},
+    onShowNetworkDiscovery: () -> Unit = {}
+) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("About UDP Trigger") },
@@ -603,6 +644,9 @@ fun AboutDialog(onDismiss: () -> Unit) {
                 Text("• Haptic and sound feedback", style = MaterialTheme.typography.bodySmall)
                 Text("• Auto-reconnect on network changes", style = MaterialTheme.typography.bodySmall)
                 Text("• Packet history and statistics", style = MaterialTheme.typography.bodySmall)
+                Text("• Crash reporting and error analytics", style = MaterialTheme.typography.bodySmall)
+                Text("• Usage analytics and insights", style = MaterialTheme.typography.bodySmall)
+                Text("• Network device discovery", style = MaterialTheme.typography.bodySmall)
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "Perfect for show control, OBS triggering, and network testing.",
@@ -612,8 +656,22 @@ fun AboutDialog(onDismiss: () -> Unit) {
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Close")
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End)
+            ) {
+                TextButton(onClick = onShowCrashReports) {
+                    Text("Crash Reports")
+                }
+                TextButton(onClick = onShowAnalytics) {
+                    Text("Analytics")
+                }
+                TextButton(onClick = onShowNetworkDiscovery) {
+                    Text("Network Scan")
+                }
+                TextButton(onClick = onDismiss) {
+                    Text("Close")
+                }
             }
         }
     )
@@ -2337,3 +2395,509 @@ fun ReceivedPacketItem(
     }
 }
 
+
+@Composable
+fun CrashReportsDialog(
+    onDismiss: () -> Unit,
+    context: Context
+) {
+    val crashReporter = remember { com.udptrigger.util.CrashReporterSingleton.get() }
+    val crashReports = remember { mutableStateOf(crashReporter?.getCrashReports() ?: emptyList()) }
+    val selectedReport = remember { mutableStateOf<com.udptrigger.util.CrashReportInfo?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Crash Reports") },
+        text = {
+            if (crashReports.value.isEmpty()) {
+                Text(
+                    "No crash reports found.",
+                    modifier = Modifier.fillMaxWidth(),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(crashReports.value.size) { index ->
+                        val report = crashReports.value[index]
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { selectedReport.value = report },
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant
+                            )
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Text(
+                                    text = report.exceptionType,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                                Text(
+                                    text = report.fileName,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = if (report.timestamp > 0) {
+                                        java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
+                                            .format(java.util.Date(report.timestamp))
+                                    } else {
+                                        "Unknown time"
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                if (crashReports.value.isNotEmpty()) {
+                    TextButton(
+                        onClick = {
+                            crashReporter?.clearAllCrashReports()
+                            crashReports.value = emptyList()
+                        }
+                    ) {
+                        Text("Clear All")
+                    }
+                }
+                TextButton(onClick = onDismiss) {
+                    Text("Close")
+                }
+            }
+        }
+    )
+
+    // Show detailed crash report
+    selectedReport.value?.let { report ->
+        AlertDialog(
+            onDismissRequest = { selectedReport.value = null },
+            title = { Text(report.exceptionType) },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(400.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Text(
+                        text = report.content,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+            },
+            confirmButton = {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(
+                        onClick = {
+                            // Share crash report
+                            val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(android.content.Intent.EXTRA_TEXT, report.content)
+                                putExtra(android.content.Intent.EXTRA_SUBJECT, "Crash Report: ${report.exceptionType}")
+                            }
+                            context.startActivity(android.content.Intent.createChooser(intent, "Share Crash Report"))
+                        }
+                    ) {
+                        Text("Share")
+                    }
+                    TextButton(
+                        onClick = {
+                            crashReporter?.deleteCrashReport(report.fileName)
+                            crashReports.value = crashReporter?.getCrashReports() ?: emptyList()
+                            selectedReport.value = null
+                        }
+                    ) {
+                        Text("Delete")
+                    }
+                    TextButton(onClick = { selectedReport.value = null }) {
+                        Text("Close")
+                    }
+                }
+            }
+        )
+    }
+}
+
+@Composable
+fun AnalyticsDialog(
+    onDismiss: () -> Unit,
+    context: Context
+) {
+    val statisticsDataStore = remember { com.udptrigger.data.StatisticsDataStore(context) }
+    var statistics by remember { mutableStateOf<com.udptrigger.data.UsageStatistics?>(null) }
+    val coroutineScope = rememberCoroutineScope()
+
+    LaunchedEffect(Unit) {
+        statistics = statisticsDataStore.statisticsFlow.first()
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Usage Analytics") },
+        text = {
+            if (statistics == null) {
+                Box(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
+                }
+            } else {
+                val stats = statistics!!
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    item {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.primaryContainer
+                            )
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = "Session Statistics",
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                                StatRow("Total Sessions", stats.totalSessions.toString())
+                                StatRow(
+                                    "Last Session",
+                                    if (stats.lastSessionTime > 0) {
+                                        java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US)
+                                            .format(java.util.Date(stats.lastSessionTime))
+                                    } else {
+                                        "Never"
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    item {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer
+                            )
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = "Packet Statistics",
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                                StatRow("Sent", stats.totalPacketsSent.toString())
+                                StatRow("Received", stats.totalPacketsReceived.toString())
+                                StatRow("Failed", stats.totalPacketsFailed.toString())
+                                val successRate = if (stats.totalPacketsSent + stats.totalPacketsReceived > 0) {
+                                    (stats.totalPacketsSent + stats.totalPacketsReceived - stats.totalPacketsFailed).toFloat() /
+                                            (stats.totalPacketsSent + stats.totalPacketsReceived).toFloat() * 100
+                                } else 0f
+                                StatRow("Success Rate", "%.1f%%".format(successRate))
+                            }
+                        }
+                    }
+
+                    item {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.tertiaryContainer
+                            )
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = "Usage Time",
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                                val hours = stats.totalConnectionTimeMs / 3600000
+                                val minutes = (stats.totalConnectionTimeMs % 3600000) / 60000
+                                val seconds = (stats.totalConnectionTimeMs % 60000) / 1000
+                                StatRow("Total Time", "%dh %dm %ds".format(hours, minutes, seconds))
+                            }
+                        }
+                    }
+
+                    if (stats.mostUsedPreset.isNotEmpty()) {
+                        item {
+                            Card(
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Text(
+                                        text = "Most Used Preset",
+                                        style = MaterialTheme.typography.titleMedium
+                                    )
+                                    StatRow("Name", stats.mostUsedPreset)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End)
+            ) {
+                TextButton(
+                    onClick = {
+                        coroutineScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                            statisticsDataStore.clearAllStatistics()
+                            statistics = com.udptrigger.data.UsageStatistics()
+                        }
+                    }
+                ) {
+                    Text("Reset Stats")
+                }
+                TextButton(onClick = onDismiss) {
+                    Text("Close")
+                }
+            }
+        }
+    )
+}
+
+@Composable
+fun StatRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+    }
+}
+
+@Composable
+fun NetworkDiscoveryDialog(
+    onDismiss: () -> Unit,
+    context: Context,
+    onConnectToDevice: (String, Int) -> Unit
+) {
+    val networkScanner = remember { com.udptrigger.domain.NetworkScanner(context) }
+    val discoveredDevices = remember { mutableStateOf<List<com.udptrigger.domain.DiscoveredDevice>>(emptyList()) }
+    val isScanning = remember { mutableStateOf(false) }
+    val scanProgress = remember { mutableStateOf(0 to 254) }
+    val localIp = remember { mutableStateOf(networkScanner.getLocalIpAddress()) }
+    val ssid = remember { mutableStateOf(networkScanner.getNetworkSSID()) }
+    val coroutineScope = rememberCoroutineScope()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Network Discovery") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 500.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Network info
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = "Current Network",
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        Text(
+                            text = "SSID: ${ssid ?: "Unknown"}",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Text(
+                            text = "Local IP: ${localIp ?: "Unknown"}",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+
+                // Scan button
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            isScanning.value = true
+                            discoveredDevices.value = emptyList()
+                            coroutineScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                                val devices = networkScanner.scanCommonPorts(
+                                    onProgress = { current, total ->
+                                        scanProgress.value = current to total
+                                    },
+                                    onDeviceFound = { device ->
+                                        val current = discoveredDevices.value.toMutableList()
+                                        current.add(device)
+                                        discoveredDevices.value = current
+                                    }
+                                )
+                                discoveredDevices.value = devices
+                                isScanning.value = false
+                            }
+                        },
+                        enabled = !isScanning.value,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        if (isScanning.value) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Text("Scan Network")
+                        }
+                    }
+                }
+
+                // Progress
+                if (isScanning.value) {
+                    Column {
+                        Text(
+                            text = "Scanning... ${scanProgress.value.first}/${scanProgress.value.second}",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        LinearProgressIndicator(
+                            progress = { scanProgress.value.first.toFloat() / scanProgress.value.second.toFloat() },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+
+                // Discovered devices
+                if (discoveredDevices.value.isNotEmpty()) {
+                    Text(
+                        text = "Found ${discoveredDevices.value.size} device(s):",
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(discoveredDevices.value.size) { index ->
+                            val device = discoveredDevices.value[index]
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (device.latencyMs >= 0) {
+                                        MaterialTheme.colorScheme.primaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.surfaceVariant
+                                    }
+                                )
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = "${device.address}:${device.port}",
+                                                style = MaterialTheme.typography.titleSmall
+                                            )
+                                            device.hostName?.let {
+                                                Text(
+                                                    text = it,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                            Text(
+                                                text = if (device.latencyMs >= 0) {
+                                                    "Latency: ${device.latencyMs}ms"
+                                                } else {
+                                                    "Latency: Unknown"
+                                                },
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                        Button(
+                                            onClick = {
+                                                onConnectToDevice(device.address, device.port)
+                                            },
+                                            modifier = Modifier.size(height = 36.dp, width = 80.dp)
+                                        ) {
+                                            Text("Connect", style = MaterialTheme.typography.labelSmall)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else if (!isScanning.value) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "No devices found. Tap 'Scan Network' to discover UDP devices.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close")
+            }
+        }
+    )
+}

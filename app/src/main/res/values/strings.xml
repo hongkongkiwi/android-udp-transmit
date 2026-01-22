@@ -1,11 +1,143 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- App Info -->
     <string name="app_name">UDP Trigger</string>
     <string name="trigger_ready">Press any key to trigger UDP</string>
-    <string name="sending">Sending UDP packet...</string>
+
+    <!-- Status Messages -->
+    <string name="sending">Sending UDP packet…</string>
     <string name="sent">Packet sent!</string>
     <string name="error">Error: %1$s</string>
+    <string name="status_connected">Connected</string>
+    <string name="status_disconnected">Disconnected</string>
+    <string name="status_connecting">Connecting…</string>
+    <string name="status_listening">Listening on port %1$d</string>
+
+    <!-- Connection Config -->
     <string name="destination_ip">Destination IP</string>
     <string name="destination_port">Port</string>
     <string name="packet_content">Packet Content</string>
+    <string name="hex_mode">Hex Mode</string>
+    <string name="include_timestamp">Include Timestamp</string>
+    <string name="include_burst_index">Include Burst Index</string>
+
+    <!-- Actions -->
+    <string name="connect">Connect</string>
+    <string name="disconnect">Disconnect</string>
+    <string name="trigger">Send UDP</string>
+    <string name="trigger_burst">Burst</string>
+    <string name="save">Save</string>
+    <string name="cancel">Cancel</string>
+    <string name="reset">Reset</string>
+    <string name="delete">Delete</string>
+    <string name="edit">Edit</string>
+    <string name="apply">Apply</string>
+    <string name="close">Close</string>
+    <string name="ok">OK</string>
+
+    <!-- Navigation -->
+    <string name="nav_config">Config</string>
+    <string name="nav_settings">Settings</string>
+    <string name="nav_history">Packet History</string>
+    <string name="nav_listen_mode">Listen Mode</string>
+    <string name="nav_import_export">Import/Export</string>
+    <string name="nav_about">About</string>
+
+    <!-- Presets -->
+    <string name="presets">Presets</string>
+    <string name="preset_default">Default</string>
+    <string name="preset_save_as">Save as Preset</string>
+    <string name="preset_name">Preset Name</string>
+    <string name="preset_description">Description (optional)</string>
+    <string name="preset_saved">Preset saved</string>
+    <string name="preset_deleted">Preset deleted</string>
+    <string name="preset_updated">Preset updated</string>
+
+    <!-- Settings -->
+    <string name="settings_haptic">Haptic Feedback</string>
+    <string name="settings_sound">Sound Feedback</string>
+    <string name="settings_rate_limit">Rate Limiting</string>
+    <string name="settings_rate_limit_ms">Minimum Delay: %1$d ms</string>
+    <string name="settings_auto_reconnect">Auto-Reconnect</string>
+    <string name="settings_auto_connect_startup">Auto-Connect on Startup</string>
+    <string name="settings_keep_screen_on">Keep Screen On</string>
+    <string name="settings_wake_lock">Reduce Latency (Wake Lock)</string>
+    <string name="settings_foreground_service">Background Service</string>
+    <string name="settings_health_check">Connection Health Check</string>
+    <string name="settings_burst_mode">Burst Mode</string>
+
+    <!-- Burst Mode -->
+    <string name="burst_packet_count">Packets: %1$d</string>
+    <string name="burst_delay">Delay: %1$d ms</string>
+    <string name="burst_sending">Sending burst…</string>
+
+    <!-- Listen Mode -->
+    <string name="listen_mode_title">Listen Mode</string>
+    <string name="listen_mode_start">Start Listening</string>
+    <string name="listen_mode_stop">Stop Listening</string>
+    <string name="listen_mode_clear">Clear Received</string>
+    <string name="listen_mode_device_ip">Device IP: %1$s</string>
+    <string name="listen_mode_no_packets">No packets received yet</string>
+
+    <!-- Import/Export -->
+    <string name="import_export_title">Import/Export</string>
+    <string name="export_config">Export Configuration</string>
+    <string name="import_config">Import Configuration</string>
+    <string name="export_history">Export History</string>
+    <string name="import_success">Import successful</string>
+    <string name="export_success">Export successful</string>
+    <string name="import_failed">Import failed: %1$s</string>
+    <string name="export_failed">Export failed: %1$s</string>
+
+    <!-- Packet Size -->
+    <string name="packet_size">Packet Size</string>
+    <string name="packet_size_bytes">%1$d bytes</string>
+    <string name="packet_size_breakdown">Size Breakdown</string>
+    <string name="packet_size_content">Content</string>
+    <string name="packet_size_separators">Separators</string>
+    <string name="packet_size_timestamp">Timestamp</string>
+    <string name="packet_size_burst_index">Burst Index</string>
+    <string name="packet_size_total">Total</string>
+
+    <!-- Stats -->
+    <string name="stats_packets_sent">Sent: %1$d</string>
+    <string name="stats_packets_failed">Failed: %1$d</string>
+    <string name="stats_packets_received">Received: %1$d</string>
+    <string name="stats_latency">Latency: %1$.1f ms</string>
+    <string name="stats_avg_latency">Avg: %1$.1f ms</string>
+    <string name="stats_last_trigger">Last: %1$s</string>
+
+    <!-- Connection Health -->
+    <string name="health_excellent">Excellent</string>
+    <string name="health_good">Good</string>
+    <string name="health_fair">Fair</string>
+    <string name="health_poor">Poor</string>
+    <string name="health_disconnected">Disconnected</string>
+    <string name="health_success_rate">Success: %1$d%%</string>
+
+    <!-- About -->
+    <string name="about_title">About UDP Trigger</string>
+    <string name="about_version">Version %1$s (%2$d)</string>
+    <string name="about_build">Build: Android %1$s (API %2$d)</string>
+    <string name="about_description">A low-latency UDP packet sender for Android.</string>
+    <string name="about_privacy">Privacy Policy</string>
+    <string name="about_opensource">Open Source</string>
+    <string name="about_show_tutorial">Show Tutorial</string>
+
+    <!-- Errors -->
+    <string name="error_connection_failed">Connection failed</string>
+    <string name="error_invalid_ip">Invalid IP address</string>
+    <string name="error_invalid_port">Port must be 1-65535</string>
+    <string name="error_invalid_host">Invalid hostname</string>
+    <string name="error_packet_too_large">Packet too large</string>
+    <string name="error_not_connected">Not connected</string>
+    <string name="error_already_connected">Already connected</string>
+    <string name="error_send_failed">Send failed: %1$s</string>
+
+    <!-- Widget -->
+    <bool name="glance_appwidget_enabled">true</bool>
+    <string name="widget_description">Quick UDP trigger from home screen</string>
+    <string name="widget_small_description">Quick trigger button with status</string>
+    <string name="widget_medium_description">Trigger button with preset and config</string>
+    <string name="widget_large_description">Full widget with stats and controls</string>
 </resources>

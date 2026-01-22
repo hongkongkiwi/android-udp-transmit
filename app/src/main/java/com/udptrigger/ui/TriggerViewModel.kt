@@ -17,6 +17,9 @@ import com.udptrigger.domain.SoundManager
 import com.udptrigger.domain.UdpClient
 import com.udptrigger.domain.WakeLockManager
 import com.udptrigger.service.UdpForegroundService
+import com.udptrigger.util.ErrorHandler
+import com.udptrigger.widget.updateWidgetConnectionState
+import com.udptrigger.util.ErrorInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -60,6 +63,33 @@ data class PacketSizeBreakdown(
     val isHexMode: Boolean
 )
 
+/**
+ * Connection health status for monitoring UDP connection quality
+ */
+enum class ConnectionHealth {
+    EXCELLENT,
+    GOOD,
+    FAIR,
+    POOR,
+    DISCONNECTED;
+
+    fun getDisplayLabel(): String = when (this) {
+        EXCELLENT -> "Excellent"
+        GOOD -> "Good"
+        FAIR -> "Fair"
+        POOR -> "Poor"
+        DISCONNECTED -> "Disconnected"
+    }
+
+    fun getColor(): Long = when (this) {
+        EXCELLENT -> 0xFF4CAF50  // Green
+        GOOD -> 0xFF8BC34A       // Light Green
+        FAIR -> 0xFFFFC107       // Amber
+        POOR -> 0xFFFF5722       // Orange-Red
+        DISCONNECTED -> 0xFF9E9E9E // Gray
+    }
+}
+
 data class TriggerState(
     val isConnected: Boolean = false,
     val isListening: Boolean = false,
@@ -67,6 +97,8 @@ data class TriggerState(
     val lastTriggerTime: Long? = null,
     val lastTimestamp: Long? = null,
     val error: String? = null,
+    // User-friendly error information for display
+    val userFacingError: ErrorInfo? = null,
     val config: UdpConfig = UdpConfig(),
     val packetHistory: List<PacketHistoryEntry> = emptyList(),
     val receivedPackets: List<ReceivedPacketInfo> = emptyList(),
@@ -89,7 +121,16 @@ data class TriggerState(
     val scheduledTrigger: ScheduledTrigger = ScheduledTrigger(),
     val lastTriggered: Long = 0,
     val lastSendLatencyMs: Double = 0.0,
-    val averageLatencyMs: Double = 0.0
+    val averageLatencyMs: Double = 0.0,
+    // Historical latency for visualization (last 30 measurements, in milliseconds)
+    val recentLatencyHistory: List<Double> = emptyList(),
+    // Connection health monitoring
+    val connectionHealth: ConnectionHealth = ConnectionHealth.DISCONNECTED,
+    val recentSuccessRate: Float = 1.0f, // 0.0 to 1.0 (last 20 packets)
+    val lastSuccessfulSendTime: Long? = null,
+    val healthCheckEnabled: Boolean = true,
+    val historyLimit: Int = 1000,
+    val shareCode: String? = null
 )
 
 data class ScheduledTrigger(
@@ -158,6 +199,7 @@ class TriggerViewModel(
     private val networkMonitor = NetworkMonitor(context)
     private val dataManager = com.udptrigger.data.DataManager(context)
     private val wakeLockManager = WakeLockManager(context)
+    private val packetRulesDataStore = com.udptrigger.data.PacketRulesDataStore(context)
 
     // Variable counter for sequences
     private var packetSequence: Int = 0
@@ -166,6 +208,10 @@ class TriggerViewModel(
     // Latency tracking
     private var latencySumMs: Double = 0.0
     private var latencyCount: Int = 0
+
+    // Health tracking - track recent send results for connection quality
+    private val recentSendResults = ArrayDeque<Boolean>()
+    private val maxHealthTrackingSize = 20
 
     private val vibrator: Vibrator? by lazy {
         when {
@@ -205,13 +251,31 @@ class TriggerViewModel(
                     autoConnectOnStartup = savedSettings.autoConnectOnStartup,
                     keepScreenOn = savedSettings.keepScreenOn,
                     wakeLockEnabled = savedSettings.wakeLockEnabled,
-                    foregroundServiceEnabled = savedSettings.foregroundServiceEnabled
+                    foregroundServiceEnabled = savedSettings.foregroundServiceEnabled,
+                    healthCheckEnabled = savedSettings.healthCheckEnabled,
+                    historyLimit = savedSettings.historyLimit
                 )
 
-                // Auto-connect on startup if enabled
-                if (savedSettings.autoConnectOnStartup && networkMonitor.isCurrentlyConnected()) {
-                    kotlinx.coroutines.delay(500) // Small delay to ensure network is ready
-                    connect()
+                // Auto-connect on startup if enabled OR if there was a previous connection
+                if (networkMonitor.isCurrentlyConnected()) {
+                    // Check if there was a previous connection
+                    val lastConnection = dataStore.lastConnectionFlow.first()
+
+                    if (savedSettings.autoConnectOnStartup || lastConnection != null) {
+                        kotlinx.coroutines.delay(500) // Small delay to ensure network is ready
+
+                        // If we have a last connection, use that; otherwise use current config
+                        if (lastConnection != null) {
+                            // Load the last connection config
+                            _state.value = _state.value.copy(
+                                config = _state.value.config.copy(
+                                    host = lastConnection.host,
+                                    port = lastConnection.port
+                                )
+                            )
+                        }
+                        connect()
+                    }
                 }
             } catch (e: Exception) {
                 // Use defaults if loading fails
@@ -380,6 +444,21 @@ class TriggerViewModel(
         }
     }
 
+    fun updateHealthCheckEnabled(enabled: Boolean) {
+        _state.value = _state.value.copy(healthCheckEnabled = enabled)
+        viewModelScope.launch {
+            dataStore.saveHealthCheckEnabled(enabled)
+            // Reset health tracking when toggling
+            if (!enabled) {
+                recentSendResults.clear()
+                _state.value = _state.value.copy(
+                    connectionHealth = if (_state.value.isConnected) ConnectionHealth.GOOD else ConnectionHealth.DISCONNECTED,
+                    recentSuccessRate = 1.0f
+                )
+            }
+        }
+    }
+
     private fun acquireWakeLock() {
         if (_state.value.wakeLockEnabled && !_state.value.isWakeLockActive) {
             if (wakeLockManager.acquire()) {
@@ -457,6 +536,13 @@ class TriggerViewModel(
                 packetCount = packetCount.coerceIn(1, 100),
                 delayMs = delayMs.coerceIn(10, 5000)
             )
+        )
+    }
+
+    fun clearError() {
+        _state.value = _state.value.copy(
+            error = null,
+            userFacingError = null
         )
     }
 
@@ -590,6 +676,7 @@ class TriggerViewModel(
                         packetHistory = updatedHistory,
                         totalPacketsSent = _state.value.totalPacketsSent + 1
                     )
+                    updateHealthTracking(success = true)
                 },
                 onFailure = { e ->
                     val newEntry = PacketHistoryEntry(
@@ -605,6 +692,7 @@ class TriggerViewModel(
                         packetHistory = updatedHistory,
                         totalPacketsFailed = _state.value.totalPacketsFailed + 1
                     )
+                    updateHealthTracking(success = false)
                 }
             )
         }
@@ -833,16 +921,21 @@ class TriggerViewModel(
                     type = PacketType.SENT
                 )
                 val updatedHistory = (listOf(newEntry) + _state.value.packetHistory).take(100)
+                // Update latency history (keep last 30 values)
+                val updatedLatencyHistory = (listOf(latencyMs) + _state.value.recentLatencyHistory).take(30)
                 _state.value = _state.value.copy(
                     lastTriggerTime = System.currentTimeMillis(),
                     lastTimestamp = timestamp,
                     lastTriggered = System.currentTimeMillis(),
                     lastSendLatencyMs = latencyMs,
                     averageLatencyMs = if (latencyCount > 0) latencySumMs / latencyCount else 0.0,
+                    recentLatencyHistory = updatedLatencyHistory,
                     error = null,
+                    userFacingError = null,
                     packetHistory = updatedHistory,
                     totalPacketsSent = _state.value.totalPacketsSent + 1
                 )
+                updateHealthTracking(success = true)
             } else {
                 val newEntry = PacketHistoryEntry(
                     timestamp = System.currentTimeMillis(),
@@ -852,15 +945,80 @@ class TriggerViewModel(
                     type = PacketType.SENT
                 )
                 val updatedHistory = (listOf(newEntry) + _state.value.packetHistory).take(100)
+
+                // Create a generic send error (no exception details available in fast path)
+                val sendError = ErrorInfo(
+                    title = "Send Failed",
+                    message = "Failed to send UDP packet. The destination may be unreachable.",
+                    recoverySuggestion = "Check:\n• Connection is active\n• Destination address and port are correct\n• Network is available"
+                )
+
                 _state.value = _state.value.copy(
                     error = "Send failed",
+                    userFacingError = sendError,
                     packetHistory = updatedHistory,
                     totalPacketsFailed = _state.value.totalPacketsFailed + 1
                 )
+                updateHealthTracking(success = false)
             }
         }
 
         return sendCompleteTime
+    }
+
+    /**
+     * Update connection health tracking after a send attempt
+     * @param success Whether the send was successful
+     */
+    private fun updateHealthTracking(success: Boolean) {
+        if (!_state.value.healthCheckEnabled) return
+
+        // Add result to recent history (keeps last 20)
+        recentSendResults.addLast(success)
+
+        // Manually manage size - remove oldest if exceeds max
+        if (recentSendResults.size > maxHealthTrackingSize) {
+            recentSendResults.removeFirst()
+        }
+
+        // Calculate success rate
+        val successRate = if (recentSendResults.isNotEmpty()) {
+            recentSendResults.count { it }.toFloat() / recentSendResults.size
+        } else {
+            1.0f
+        }
+
+        // Calculate health based on multiple factors
+        val health = when {
+            !_state.value.isConnected -> ConnectionHealth.DISCONNECTED
+            recentSendResults.isEmpty() -> ConnectionHealth.GOOD
+            successRate >= 0.95f && _state.value.averageLatencyMs < 50.0 -> ConnectionHealth.EXCELLENT
+            successRate >= 0.85f && _state.value.averageLatencyMs < 100.0 -> ConnectionHealth.GOOD
+            successRate >= 0.70f -> ConnectionHealth.FAIR
+            else -> ConnectionHealth.POOR
+        }
+
+        val now = System.currentTimeMillis()
+
+        // Update state with new health info
+        _state.value = _state.value.copy(
+            connectionHealth = health,
+            recentSuccessRate = successRate,
+            lastSuccessfulSendTime = if (success) now else _state.value.lastSuccessfulSendTime
+        )
+    }
+
+    /**
+     * Reset health tracking when connection state changes
+     */
+    private fun resetHealthTracking() {
+        recentSendResults.clear()
+        _state.value = _state.value.copy(
+            connectionHealth = if (_state.value.isConnected) ConnectionHealth.GOOD else ConnectionHealth.DISCONNECTED,
+            recentSuccessRate = 1.0f,
+            lastSuccessfulSendTime = null,
+            recentLatencyHistory = emptyList()
+        )
     }
 
     fun connect() {
@@ -870,13 +1028,27 @@ class TriggerViewModel(
             val config = _state.value.config
             try {
                 udpClient.initialize(config.host, config.port)
-                _state.value = _state.value.copy(isConnected = true, error = null)
+                _state.value = _state.value.copy(
+                    isConnected = true,
+                    error = null,
+                    userFacingError = null
+                )
+                // Update widget connection state
+                updateWidgetConnectionState(context, true)
+                // Save last successful connection
+                dataStore.saveLastConnection(config.host, config.port)
+                // Reset and initialize health tracking
+                resetHealthTracking()
                 // Acquire wake lock if enabled
                 acquireWakeLock()
                 // Start foreground service if enabled
                 startForegroundService()
             } catch (e: Exception) {
-                _state.value = _state.value.copy(error = "Connection failed: ${e.message}")
+                val errorInfo = ErrorHandler.getConnectionErrorInfo(e, config.host, config.port)
+                _state.value = _state.value.copy(
+                    error = "Connection failed: ${e.message}",
+                    userFacingError = errorInfo
+                )
             }
         }
     }
@@ -890,7 +1062,17 @@ class TriggerViewModel(
             // Release wake lock before disconnecting
             releaseWakeLock()
             udpClient.close()
-            _state.value = _state.value.copy(isConnected = false, error = null)
+            _state.value = _state.value.copy(
+                isConnected = false,
+                error = null,
+                userFacingError = null
+            )
+            // Update widget connection state
+            updateWidgetConnectionState(context, false)
+            // Clear last connection state when user manually disconnects
+            dataStore.clearLastConnection()
+            // Reset health tracking on disconnect
+            resetHealthTracking()
         }
     }
 
@@ -946,6 +1128,9 @@ class TriggerViewModel(
                     // Play sound/haptic for received packets
                     triggerHapticFeedback()
                     playSoundEffect()
+
+                    // Check packet action rules
+                    checkPacketActionRules(dataString, receivedInfo.sourceAddress, receivedInfo.sourcePort)
                 }
             } catch (e: Exception) {
                 _state.value = _state.value.copy(
@@ -981,6 +1166,72 @@ class TriggerViewModel(
             receivedPackets = emptyList(),
             totalPacketsReceived = 0
         )
+    }
+
+    /**
+     * Update the history limit setting
+     */
+    fun updateHistoryLimit(limit: Int) {
+        val validLimit = limit.coerceIn(100, 100000) // Between 100 and 100000
+        _state.value = _state.value.copy(historyLimit = validLimit)
+        viewModelScope.launch {
+            dataStore.saveHistoryLimit(validLimit)
+        }
+    }
+
+    /**
+     * Clear all data (both sent and received packet history)
+     */
+    fun clearAllData() {
+        _state.value = _state.value.copy(
+            packetHistory = emptyList(),
+            receivedPackets = emptyList(),
+            totalPacketsSent = 0,
+            totalPacketsFailed = 0,
+            totalPacketsReceived = 0,
+            lastSendLatencyMs = 0.0,
+            averageLatencyMs = 0.0,
+            recentLatencyHistory = emptyList(),
+            connectionHealth = ConnectionHealth.DISCONNECTED,
+            recentSuccessRate = 1.0f,
+            lastSuccessfulSendTime = null
+        )
+    }
+
+    /**
+     * Check received packet against action rules and execute matching rules
+     */
+    private fun checkPacketActionRules(packetContent: String, sourceAddress: String, sourcePort: Int) {
+        viewModelScope.launch {
+            try {
+                val rules = packetRulesDataStore.rulesFlow.first()
+                val enabledRules = rules.filter { it.enabled }
+
+                for (rule in enabledRules) {
+                    val matches = if (rule.useRegex) {
+                        try {
+                            Regex(rule.matchPattern).containsMatchIn(packetContent)
+                        } catch (e: Exception) {
+                            false // Invalid regex
+                        }
+                    } else {
+                        packetContent.contains(rule.matchPattern, ignoreCase = false)
+                    }
+
+                    if (matches) {
+                        com.udptrigger.data.executePacketAction(
+                            context,
+                            rule,
+                            packetContent,
+                            sourceAddress,
+                            sourcePort
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                // Silently fail on rule processing errors
+            }
+        }
     }
 
     // Scheduled Trigger Mode
@@ -1367,6 +1618,45 @@ class TriggerViewModel(
                 error = "Export failed: ${e.message}"
             )
         }
+    }
+
+    /**
+     * Generate a share code for the current configuration
+     */
+    suspend fun generateShareCode() {
+        com.udptrigger.data.generateShareCode(context).fold(
+            onSuccess = { shareCode ->
+                _state.value = _state.value.copy(
+                    error = null,
+                    shareCode = shareCode
+                )
+            },
+            onFailure = { e ->
+                _state.value = _state.value.copy(
+                    error = "Failed to generate share code: ${e.message}"
+                )
+            }
+        )
+    }
+
+    /**
+     * Import configuration from a share code
+     */
+    suspend fun importShareCode(code: String) {
+        com.udptrigger.data.importShareCode(context, code).fold(
+            onSuccess = { config ->
+                updateConfig(config)
+                _state.value = _state.value.copy(
+                    error = null,
+                    shareCode = null
+                )
+            },
+            onFailure = { e ->
+                _state.value = _state.value.copy(
+                    error = "Invalid share code: ${e.message}"
+                )
+            }
+        )
     }
 
     /**
