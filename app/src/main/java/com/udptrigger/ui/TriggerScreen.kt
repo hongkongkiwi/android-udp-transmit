@@ -175,9 +175,7 @@ fun TriggerScreen(
 
     // History dialog
     if (showHistory) {
-        PacketHistoryDialog(
-            onDismiss = { showHistory = false }
-        )
+        PacketHistoryDialog(onDismiss = { showHistory = false })
     }
 }
 
@@ -563,26 +561,4 @@ fun ErrorCard(
             }
         }
     }
-}
-
-/**
- * Packet history dialog (placeholder for now)
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun PacketHistoryDialog(
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.nav_history)) },
-        text = {
-            Text("Packet history coming soon")
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.ok))
-            }
-        }
-    )
 }
