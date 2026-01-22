@@ -106,7 +106,9 @@ class NetworkScannerViewModel(
 
     private suspend fun scanLocalNetwork() {
         withContext(Dispatchers.IO) {
+            @Suppress("DEPRECATION")
             val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+            @Suppress("DEPRECATION")
             val ipAddress = wifiManager.connectionInfo.ipAddress
             val baseIp = String.format("%d.%d.%d.",
                 ipAddress and 0xff,
@@ -183,7 +185,7 @@ fun NetworkScannerDialog(
     var customIp by remember { mutableStateOf("") }
     var customPort by remember { mutableStateOf("5000") }
 
-    AlertDialog(
+    BasicAlertDialog(
         onDismissRequest = onDismiss,
         modifier = Modifier.fillMaxWidth(0.95f).fillMaxHeight(0.8f)
     ) {

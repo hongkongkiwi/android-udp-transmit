@@ -22,6 +22,11 @@ class SettingsDataStore(private val context: Context) {
         val INCLUDE_TIMESTAMP = booleanPreferencesKey("include_timestamp")
         val HAPTIC_ENABLED = booleanPreferencesKey("haptic_enabled")
         val RATE_LIMIT_MS = intPreferencesKey("rate_limit_ms")
+        val SOUND_FEEDBACK = booleanPreferencesKey("sound_feedback")
+        val AUTO_RECONNECT = booleanPreferencesKey("auto_reconnect")
+        val KEEP_SCREEN_ON = booleanPreferencesKey("keep_screen_on")
+        val WAKE_LOCK = booleanPreferencesKey("wake_lock")
+        val PRESETS = stringPreferencesKey("presets")
     }
 
     val configFlow: Flow<UdpConfig> = context.dataStore.data.map { preferences ->
@@ -39,6 +44,35 @@ class SettingsDataStore(private val context: Context) {
 
     val rateLimitMsFlow: Flow<Int> = context.dataStore.data.map { preferences ->
         preferences[PreferencesKeys.RATE_LIMIT_MS] ?: 100
+    }
+
+    val soundFeedbackFlow: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.SOUND_FEEDBACK] ?: false
+    }
+
+    val autoReconnectFlow: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.AUTO_RECONNECT] ?: false
+    }
+
+    val keepScreenOnFlow: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.KEEP_SCREEN_ON] ?: false
+    }
+
+    val wakeLockFlow: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.WAKE_LOCK] ?: false
+    }
+
+    val presetsFlow: Flow<List<PresetData>> = context.dataStore.data.map { preferences ->
+        val presetsJson = preferences[PreferencesKeys.PRESETS]
+        if (presetsJson.isNullOrEmpty()) {
+            emptyList()
+        } else {
+            try {
+                parsePresetsJson(presetsJson)
+            } catch (e: Exception) {
+                emptyList()
+            }
+        }
     }
 
     suspend fun saveConfig(config: UdpConfig) {
@@ -61,7 +95,89 @@ class SettingsDataStore(private val context: Context) {
             preferences[PreferencesKeys.RATE_LIMIT_MS] = ms
         }
     }
+
+    suspend fun setSoundFeedback(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.SOUND_FEEDBACK] = enabled
+        }
+    }
+
+    suspend fun setAutoReconnect(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.AUTO_RECONNECT] = enabled
+        }
+    }
+
+    suspend fun setKeepScreenOn(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.KEEP_SCREEN_ON] = enabled
+        }
+    }
+
+    suspend fun setWakeLock(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.WAKE_LOCK] = enabled
+        }
+    }
+
+    suspend fun savePresets(presets: List<PresetData>) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.PRESETS] = serializePresets(presets)
+        }
+    }
+
+    private fun parsePresetsJson(json: String): List<PresetData> {
+        // Simple JSON parsing for presets
+        // Format: [{"id":"...","name":"...","description":"...","host":"...","port":5000,"packetContent":"...","includeTimestamp":true}]
+        val result = mutableListOf<PresetData>()
+        if (json.isEmpty() || json == "[]") return result
+
+        try {
+            // Basic parsing - split by entries
+            val entries = json.removePrefix("[").removeSuffix("]").split("},{")
+            for (entry in entries) {
+                val cleanEntry = entry.removePrefix("{").removeSuffix("}")
+                val props = cleanEntry.split(",").associate { prop ->
+                    val (key, value) = prop.split(":", limit = 2)
+                    key.trim().removeSurrounding("\"") to value.trim().removeSurrounding("\"")
+                }
+
+                result.add(
+                    PresetData(
+                        id = props["id"] ?: java.util.UUID.randomUUID().toString(),
+                        name = props["name"] ?: "Unknown",
+                        description = props["description"] ?: "",
+                        config = UdpConfig(
+                            host = props["host"] ?: "192.168.1.100",
+                            port = props["port"]?.toIntOrNull() ?: 5000,
+                            packetContent = props["packetContent"] ?: "TRIGGER",
+                            includeTimestamp = props["includeTimestamp"]?.toBooleanStrictOrNull() ?: true
+                        )
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            // Return empty list on parse error
+        }
+        return result
+    }
+
+    private fun serializePresets(presets: List<PresetData>): String {
+        return presets.joinToString(",", "[", "]") { preset ->
+            """{"id":"${preset.id}","name":"${preset.name}","description":"${preset.description}","host":"${preset.config.host}","port":${preset.config.port},"packetContent":"${preset.config.packetContent}","includeTimestamp":${preset.config.includeTimestamp}}"""
+        }
+    }
 }
+
+/**
+ * Serializable preset data for storage
+ */
+data class PresetData(
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val name: String,
+    val description: String = "",
+    val config: UdpConfig
+)
 
 /**
  * Core UDP configuration data class.

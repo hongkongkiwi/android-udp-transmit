@@ -36,7 +36,6 @@ fun TriggerScreen(
     )
 ) {
     val state by triggerViewModel.state.collectAsState()
-    val scope = rememberCoroutineScope()
 
     var showConfig by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
@@ -488,7 +487,6 @@ fun TriggerButton(
     isEnabled: Boolean,
     isConnecting: Boolean
 ) {
-    val context = LocalContext.current
     Button(
         onClick = onClick,
         modifier = Modifier

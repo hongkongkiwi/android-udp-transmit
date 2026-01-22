@@ -42,7 +42,7 @@ data class AppSettings(
 )
 
 /**
- * Settings ViewModel
+ * Settings ViewModel with full backend implementation
  */
 class SettingsViewModel(
     private val context: Context,
@@ -59,21 +59,25 @@ class SettingsViewModel(
     private fun loadSettings() {
         viewModelScope.launch {
             try {
-                // Load settings from DataStore
+                // Load settings from DataStore in parallel
                 val haptic = dataStore.hapticEnabledFlow.first()
                 val rateLimit = dataStore.rateLimitMsFlow.first()
+                val sound = dataStore.soundFeedbackFlow.first()
+                val autoReconnect = dataStore.autoReconnectFlow.first()
+                val keepScreenOn = dataStore.keepScreenOnFlow.first()
+                val wakeLock = dataStore.wakeLockFlow.first()
 
                 _settings.value = AppSettings(
                     hapticFeedback = haptic,
-                    soundFeedback = false, // Not yet implemented
+                    soundFeedback = sound,
                     rateLimitMs = rateLimit,
-                    autoReconnect = false, // Not yet implemented
-                    autoConnectOnStartup = false, // Not yet implemented
-                    keepScreenOn = false, // Not yet implemented
-                    wakeLockEnabled = false // Not yet implemented
+                    autoReconnect = autoReconnect,
+                    autoConnectOnStartup = false, // Future enhancement
+                    keepScreenOn = keepScreenOn,
+                    wakeLockEnabled = wakeLock
                 )
             } catch (e: Exception) {
-                // Use defaults
+                // Use defaults on error
             }
         }
     }
@@ -85,10 +89,38 @@ class SettingsViewModel(
         }
     }
 
+    fun updateSoundFeedback(enabled: Boolean) {
+        _settings.value = _settings.value.copy(soundFeedback = enabled)
+        viewModelScope.launch {
+            dataStore.setSoundFeedback(enabled)
+        }
+    }
+
     fun updateRateLimit(ms: Int) {
         _settings.value = _settings.value.copy(rateLimitMs = ms)
         viewModelScope.launch {
             dataStore.setRateLimitMs(ms)
+        }
+    }
+
+    fun updateAutoReconnect(enabled: Boolean) {
+        _settings.value = _settings.value.copy(autoReconnect = enabled)
+        viewModelScope.launch {
+            dataStore.setAutoReconnect(enabled)
+        }
+    }
+
+    fun updateKeepScreenOn(enabled: Boolean) {
+        _settings.value = _settings.value.copy(keepScreenOn = enabled)
+        viewModelScope.launch {
+            dataStore.setKeepScreenOn(enabled)
+        }
+    }
+
+    fun updateWakeLock(enabled: Boolean) {
+        _settings.value = _settings.value.copy(wakeLockEnabled = enabled)
+        viewModelScope.launch {
+            dataStore.setWakeLock(enabled)
         }
     }
 }
@@ -105,9 +137,8 @@ fun SettingsScreen(
     )
 ) {
     val settings by settingsViewModel.settings.collectAsState()
-    val scope = rememberCoroutineScope()
 
-    AlertDialog(
+    BasicAlertDialog(
         onDismissRequest = onDismiss,
         modifier = Modifier.fillMaxWidth(0.95f)
     ) {
@@ -160,8 +191,7 @@ fun SettingsScreen(
                             title = stringResource(R.string.settings_sound),
                             description = "Play sound when sending packets",
                             checked = settings.soundFeedback,
-                            onCheckedChange = { /* TODO */ },
-                            enabled = false
+                            onCheckedChange = { settingsViewModel.updateSoundFeedback(it) }
                         )
                     }
 
@@ -182,8 +212,7 @@ fun SettingsScreen(
                             title = stringResource(R.string.settings_wake_lock),
                             description = "Reduce latency by keeping CPU awake",
                             checked = settings.wakeLockEnabled,
-                            onCheckedChange = { /* TODO */ },
-                            enabled = false
+                            onCheckedChange = { settingsViewModel.updateWakeLock(it) }
                         )
                     }
 
@@ -193,15 +222,14 @@ fun SettingsScreen(
                             title = stringResource(R.string.settings_auto_reconnect),
                             description = "Automatically reconnect on disconnect",
                             checked = settings.autoReconnect,
-                            onCheckedChange = { /* TODO */ },
-                            enabled = false
+                            onCheckedChange = { settingsViewModel.updateAutoReconnect(it) }
                         )
 
                         SwitchSetting(
                             title = stringResource(R.string.settings_auto_connect_startup),
                             description = "Connect to last host on app start",
                             checked = settings.autoConnectOnStartup,
-                            onCheckedChange = { /* TODO */ },
+                            onCheckedChange = { /* TODO: Future enhancement */ },
                             enabled = false
                         )
                     }
@@ -212,8 +240,7 @@ fun SettingsScreen(
                             title = stringResource(R.string.settings_keep_screen_on),
                             description = "Keep screen awake while connected",
                             checked = settings.keepScreenOn,
-                            onCheckedChange = { /* TODO */ },
-                            enabled = false
+                            onCheckedChange = { settingsViewModel.updateKeepScreenOn(it) }
                         )
                     }
                 }

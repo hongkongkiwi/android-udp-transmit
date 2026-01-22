@@ -1,5 +1,6 @@
 package com.udptrigger.ui
 
+import android.content.Context
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -12,18 +13,23 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.udptrigger.R
+import com.udptrigger.data.PresetData
+import com.udptrigger.data.SettingsDataStore
 import com.udptrigger.data.UdpConfig
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.util.UUID
 
@@ -39,10 +45,14 @@ data class Preset(
 )
 
 /**
- * Preset Manager ViewModel
+ * Preset Manager ViewModel with persistence
  */
-class PresetViewModel : ViewModel() {
-    private val _presets = MutableStateFlow<List<Preset>>(getDefaultPresets())
+class PresetViewModel(
+    private val context: Context,
+    private val dataStore: SettingsDataStore
+) : ViewModel() {
+
+    private val _presets = MutableStateFlow<List<Preset>>(emptyList())
     val presets: StateFlow<List<Preset>> = _presets.asStateFlow()
 
     private val _selectedPreset = MutableStateFlow<Preset?>(null)
@@ -53,6 +63,29 @@ class PresetViewModel : ViewModel() {
 
     private val _currentConfig = MutableStateFlow(UdpConfig())
     val currentConfig: StateFlow<UdpConfig> = _currentConfig.asStateFlow()
+
+    init {
+        loadPresets()
+    }
+
+    private fun loadPresets() {
+        viewModelScope.launch {
+            try {
+                val savedPresets = dataStore.presetsFlow.first()
+                if (savedPresets.isEmpty()) {
+                    // Load defaults and save them
+                    val defaults = getDefaultPresets()
+                    _presets.value = defaults
+                    savePresetsToStore(defaults)
+                } else {
+                    _presets.value = savedPresets.map { it.toPreset() }
+                }
+            } catch (e: Exception) {
+                // Fall back to defaults
+                _presets.value = getDefaultPresets()
+            }
+        }
+    }
 
     fun setCurrentConfig(config: UdpConfig) {
         _currentConfig.value = config
@@ -68,22 +101,40 @@ class PresetViewModel : ViewModel() {
 
     fun addPreset(preset: Preset) {
         _presets.value = _presets.value + preset
+        viewModelScope.launch {
+            savePresetsToStore(_presets.value)
+        }
     }
 
     fun updatePreset(preset: Preset) {
         _presets.value = _presets.value.map {
             if (it.id == preset.id) preset else it
         }
+        viewModelScope.launch {
+            savePresetsToStore(_presets.value)
+        }
     }
 
     fun deletePreset(preset: Preset) {
         if (!preset.isDefault) {
             _presets.value = _presets.value.filter { it.id != preset.id }
+            viewModelScope.launch {
+                savePresetsToStore(_presets.value)
+            }
         }
     }
 
     fun loadPreset(preset: Preset): UdpConfig {
         return preset.config
+    }
+
+    private suspend fun savePresetsToStore(presets: List<Preset>) {
+        try {
+            val presetDataList = presets.filter { !it.isDefault }.map { it.toPresetData() }
+            dataStore.savePresets(presetDataList)
+        } catch (e: Exception) {
+            // Log error but don't crash
+        }
     }
 
     private fun getDefaultPresets(): List<Preset> {
@@ -109,6 +160,37 @@ class PresetViewModel : ViewModel() {
             )
         )
     }
+
+    private fun Preset.toPresetData(): PresetData {
+        return PresetData(
+            id = id,
+            name = name,
+            description = description,
+            config = config
+        )
+    }
+
+    private fun PresetData.toPreset(): Preset {
+        return Preset(
+            id = id,
+            name = name,
+            description = description,
+            config = config,
+            isDefault = false
+        )
+    }
+}
+
+/**
+ * Factory for PresetViewModel
+ */
+class PresetViewModelFactory(
+    private val context: Context
+) : ViewModelProvider.Factory {
+    @Suppress("UNCHECKED_CAST")
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        return PresetViewModel(context, SettingsDataStore(context)) as T
+    }
 }
 
 /**
@@ -119,13 +201,15 @@ class PresetViewModel : ViewModel() {
 fun PresetManagementDialog(
     onDismiss: () -> Unit,
     onPresetSelected: (UdpConfig) -> Unit,
-    presetViewModel: PresetViewModel = viewModel()
+    presetViewModel: PresetViewModel = viewModel(
+        factory = PresetViewModelFactory(LocalContext.current)
+    )
 ) {
     val presets by presetViewModel.presets.collectAsState()
     val showSaveDialog by presetViewModel.showSaveDialog.collectAsState()
     val currentConfig by presetViewModel.currentConfig.collectAsState()
 
-    AlertDialog(
+    BasicAlertDialog(
         onDismissRequest = onDismiss,
         modifier = Modifier.fillMaxWidth(0.95f).fillMaxHeight(0.8f)
     ) {
@@ -241,7 +325,10 @@ fun PresetItem(
     onDelete: () -> Unit
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth().then(
+            Modifier.padding(vertical = 4.dp)
+        ),
+        onClick = onClick
     ) {
         Column(
             modifier = Modifier.padding(12.dp)

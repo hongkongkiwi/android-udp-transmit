@@ -79,7 +79,7 @@ fun PacketHistoryDialog(
     val history by historyViewModel.history.collectAsState()
     val selectedEntry by historyViewModel.selectedEntry.collectAsState()
 
-    AlertDialog(
+    BasicAlertDialog(
         onDismissRequest = onDismiss,
         modifier = Modifier.fillMaxWidth(0.95f).fillMaxHeight(0.8f)
     ) {
@@ -220,14 +220,17 @@ fun PacketHistoryItem(
     val timeStr = dateFormat.format(Date(entry.timestamp))
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().then(
+            Modifier.padding(vertical = 4.dp)
+        ),
         colors = CardDefaults.cardColors(
             containerColor = if (entry.success) {
                 MaterialTheme.colorScheme.surface
             } else {
                 MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
             }
-        )
+        ),
+        onClick = onClick
     ) {
         Row(
             modifier = Modifier
@@ -303,7 +306,7 @@ fun PacketDetailDialog(
     val dateFormat = remember { SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()) }
     val fullTimeStr = dateFormat.format(Date(entry.timestamp))
 
-    AlertDialog(
+    BasicAlertDialog(
         onDismissRequest = onDismiss
     ) {
         Card(
@@ -333,7 +336,7 @@ fun PacketDetailDialog(
                 }
 
                 if (!entry.success && entry.errorMessage != null) {
-                    DetailRow("Error", entry.errorMessage!!)
+                    DetailRow("Error", entry.errorMessage)
                 }
 
                 HorizontalDivider()

@@ -129,7 +129,9 @@ class ListenModeViewModel(
 
     private fun getLocalIpAddress(): String {
         return try {
+            @Suppress("DEPRECATION")
             val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as android.net.wifi.WifiManager
+            @Suppress("DEPRECATION")
             val ipAddress = wifiManager.connectionInfo.ipAddress
             String.format("%d.%d.%d.%d",
                 ipAddress and 0xff,
@@ -165,7 +167,7 @@ fun ListenModeDialog(
 
     var portInput by remember { mutableStateOf("5001") }
 
-    AlertDialog(
+    BasicAlertDialog(
         onDismissRequest = onDismiss,
         modifier = Modifier.fillMaxWidth(0.95f).fillMaxHeight(0.8f)
     ) {

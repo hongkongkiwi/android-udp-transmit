@@ -66,7 +66,6 @@
     <string name="settings_auto_connect_startup">Auto-Connect on Startup</string>
     <string name="settings_keep_screen_on">Keep Screen On</string>
     <string name="settings_wake_lock">Reduce Latency (Wake Lock)</string>
-    <string name="settings_foreground_service">Background Service</string>
     <string name="settings_health_check">Connection Health Check</string>
     <string name="settings_burst_mode">Burst Mode</string>
 
@@ -129,6 +128,7 @@
     <string name="about_show_tutorial">Show Tutorial</string>
 
     <!-- Errors -->
+    <string name="error_invalid_config">Invalid configuration</string>
     <string name="error_connection_failed">Connection failed</string>
     <string name="error_invalid_ip">Invalid IP address</string>
     <string name="error_invalid_port">Port must be 1-65535</string>
@@ -163,8 +163,6 @@
     <string name="shortcut_settings_disabled">Settings shortcut unavailable</string>
 
     <!-- Notification Channels -->
-    <string name="channel_foreground">Foreground Service</string>
-    <string name="channel_foreground_desc">Background operation notifications</string>
     <string name="channel_sent">Packet Sent</string>
     <string name="channel_sent_desc">UDP packet sent notifications</string>
     <string name="channel_received">Packet Received</string>

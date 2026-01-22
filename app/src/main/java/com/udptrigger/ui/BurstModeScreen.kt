@@ -125,7 +125,7 @@ fun BurstModeDialog(
 ) {
     val state by burstViewModel.state.collectAsState()
 
-    AlertDialog(
+    BasicAlertDialog(
         onDismissRequest = onDismiss,
         modifier = Modifier.fillMaxWidth(0.95f)
     ) {

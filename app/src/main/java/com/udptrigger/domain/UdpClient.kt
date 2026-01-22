@@ -1,10 +1,13 @@
 package com.udptrigger.domain
 
+import android.util.Log
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+
+private const val TAG = "UdpClient"
 
 /**
  * Low-latency UDP client for sending trigger packets.
@@ -64,6 +67,7 @@ class UdpClient {
                 sock.send(packet)
                 Result.success(Unit)
             } catch (e: Exception) {
+                Log.e(TAG, "Send failed: ${e.message}", e)
                 Result.failure(e)
             }
         }
@@ -102,6 +106,7 @@ class UdpClient {
             sock.send(packet)
             return System.nanoTime()
         } catch (e: Exception) {
+            Log.e(TAG, "Fast send failed: ${e.message}", e)
             return -1L
         }
     }
