@@ -62,13 +62,6 @@ fun KeyEventListener(
         // Create a lifecycle observer to clean up
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_PAUSE,
-                Lifecycle.Event.ON_STOP,
-                Lifecycle.Event.ON_DESTROY -> {
-                    // Optionally pause key capture when app is not focused
-                    // Uncomment below to disable capture when paused:
-                    // dispatcher.setCallback(null)
-                }
                 Lifecycle.Event.ON_RESUME -> {
                     // Re-register callback when app resumes
                     dispatcher.setCallback(keyCallback)

@@ -2,174 +2,30 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Android 14+ query declarations for interacting with other apps -->
-    <queries>
-        <!-- Query for UDP socket connections -->
-        <intent>
-            <action android:name="android.intent.action.VIEW" />
-            <data android:scheme="udptrigger" />
-        </intent>
-        <!-- Query for custom scheme handling -->
-        <intent>
-            <action android:name="android.intent.action.VIEW" />
-            <data android:scheme="http" />
-        </intent>
-        <!-- Query for HTTPS URLs (privacy policy, etc.) -->
-        <intent>
-            <action android:name="android.intent.action.VIEW" />
-            <data android:scheme="https" />
-        </intent>
-    </queries>
-
     <!-- Internet permission for UDP transmission -->
     <uses-permission android:name="android.permission.INTERNET" />
 
     <!-- Vibrate permission for haptic feedback -->
     <uses-permission android:name="android.permission.VIBRATE" />
 
-    <!-- Network state permission for auto-reconnect -->
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
-
-    <!-- Wake lock for keep screen on -->
-    <uses-permission android:name="android.permission.WAKE_LOCK" />
-
-    <!-- Broadcast UDP permission -->
-    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
-
-    <!-- Foreground service permission -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-
-    <!-- Notification permission for Android 13+ -->
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-
-    <!-- Custom signature permission for secure broadcast access -->
-    <permission
-        android:name="com.udptrigger.SEND_UDP_PACKETS"
-        android:protectionLevel="signature"
-        android:label="@string/permission_send_udp_label"
-        android:description="@string/permission_send_udp_description" />
-
     <application
         android:allowBackup="true"
-        android:dataExtractionRules="@xml/data_extraction_rules"
-        android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.UdpTrigger.Splash"
+        android:theme="@style/Theme.UdpTrigger"
         tools:targetApi="34">
 
-        <!-- Splash Activity - Launcher -->
         <activity
-            android:name=".SplashActivity"
+            android:name=".MainActivity"
             android:exported="true"
-            android:theme="@style/Theme.UdpTrigger.Splash"
-            android:screenOrientation="portrait">
+            android:theme="@style/Theme.UdpTrigger">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- App shortcuts metadata -->
-            <meta-data
-                android:name="android.app.shortcuts"
-                android:resource="@xml/shortcuts" />
         </activity>
-
-        <!-- Main Activity -->
-        <activity
-            android:name=".MainActivity"
-            android:exported="false"
-            android:theme="@style/Theme.UdpTrigger"
-            android:windowSoftInputMode="adjustResize"
-            android:launchMode="singleTop">
-            <!-- Handle widget trigger action -->
-            <intent-filter>
-                <action android:name="com.udptrigger.TRIGGER_UDP" />
-                <category android:name="android.intent.category.DEFAULT" />
-            </intent-filter>
-            <!-- Deep link handling -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="udptrigger" />
-            </intent-filter>
-        </activity>
-
-        <!-- Invisible activity for instant widget trigger -->
-        <activity
-            android:name=".widget.WidgetTriggerActivity"
-            android:exported="false"
-            android:theme="@android:style/Theme.Translucent.NoTitleBar"
-            android:launchMode="singleTask"
-            android:excludeFromRecents="true">
-            <intent-filter>
-                <action android:name="com.udptrigger.WIDGET_TRIGGER" />
-                <category android:name="android.intent.category.DEFAULT" />
-            </intent-filter>
-        </activity>
-
-        <!-- Widget Configuration Activity -->
-        <activity
-            android:name=".widget.WidgetConfigurationActivity"
-            android:exported="true"
-            android:theme="@style/Theme.UdpTrigger">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
-            </intent-filter>
-        </activity>
-
-        <!-- Foreground service for background UDP operation -->
-        <service
-            android:name=".service.UdpForegroundService"
-            android:enabled="true"
-            android:exported="false"
-            android:foregroundServiceType="specialUse">
-            <intent-filter>
-                <action android:name="com.udptrigger.START_SERVICE" />
-                <action android:name="com.udptrigger.STOP_SERVICE" />
-            </intent-filter>
-        </service>
-
-        <!-- Glance App Widget -->
-        <receiver
-            android:name=".widget.TriggerGlanceReceiver"
-            android:enabled="@bool/glance_appwidget_enabled"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-                <action android:name="com.udptrigger.UPDATE_CONNECTION" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/glance_widget_info" />
-        </receiver>
-
-        <!-- Widget Trigger Receiver -->
-        <receiver
-            android:name=".widget.WidgetTriggerReceiver"
-            android:enabled="true"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="com.udptrigger.TRIGGER_UDP" />
-            </intent-filter>
-        </receiver>
-
-        <!-- Automation Integration Receiver (Tasker, MacroDroid, etc.) -->
-        <receiver
-            android:name=".receiver.UdpIntentReceiver"
-            android:permission="com.udptrigger.SEND_UDP_PACKETS"
-            android:enabled="true"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="com.udptrigger.SEND_PACKET" />
-                <action android:name="com.udptrigger.CONNECT" />
-                <action android:name="com.udptrigger.DISCONNECT" />
-                <action android:name="com.udptrigger.GET_CONNECTION_STATUS" />
-            </intent-filter>
-        </receiver>
 
     </application>
 

@@ -1,7 +1,7 @@
 package com.udptrigger
 
 import com.udptrigger.domain.UdpClient
-import com.udptrigger.ui.UdpConfig
+import com.udptrigger.data.UdpConfig
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Test
