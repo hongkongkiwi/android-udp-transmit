@@ -14,6 +14,7 @@ import com.udptrigger.data.AppSettings
 import com.udptrigger.data.SettingsDataStore
 import com.udptrigger.domain.NetworkMonitor
 import com.udptrigger.domain.SoundManager
+import com.udptrigger.domain.TcpClient
 import com.udptrigger.domain.UdpClient
 import com.udptrigger.domain.WakeLockManager
 import com.udptrigger.service.UdpForegroundService
@@ -21,6 +22,7 @@ import com.udptrigger.util.ErrorHandler
 import com.udptrigger.widget.updateWidgetConnectionState
 import com.udptrigger.util.ErrorInfo
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -130,7 +132,17 @@ data class TriggerState(
     val lastSuccessfulSendTime: Long? = null,
     val healthCheckEnabled: Boolean = true,
     val historyLimit: Int = 1000,
-    val shareCode: String? = null
+    val shareCode: String? = null,
+    // Multi-target configuration
+    val multiTargetConfig: com.udptrigger.data.MultiTargetConfig = com.udptrigger.data.MultiTargetConfig(),
+    val roundRobinIndex: Int = 0, // For round-robin send mode
+    // Packet action rules
+    val packetActionRules: List<com.udptrigger.data.PacketActionRule> = emptyList(),
+    // New comprehensive settings
+    val themeSettings: com.udptrigger.data.ThemeSettings = com.udptrigger.data.ThemeSettings(),
+    val autoRetrySettings: com.udptrigger.data.AutoRetrySettings = com.udptrigger.data.AutoRetrySettings(),
+    val qosSettings: com.udptrigger.data.QosSettings = com.udptrigger.data.QosSettings(),
+    val multicastSettings: com.udptrigger.data.MulticastSettings = com.udptrigger.data.MulticastSettings()
 )
 
 data class ScheduledTrigger(
@@ -194,6 +206,7 @@ class TriggerViewModel(
     val state: StateFlow<TriggerState> = _state.asStateFlow()
 
     private val udpClient = UdpClient()
+    private val tcpClient = TcpClient()
     private var lastTriggerNanoTime: Long = 0
     private val soundManager = SoundManager(context)
     private val networkMonitor = NetworkMonitor(context)
@@ -292,6 +305,63 @@ class TriggerViewModel(
                 }
             }
             .launchIn(viewModelScope)
+
+        // Load multi-target configuration
+        viewModelScope.launch {
+            try {
+                val multiTargetConfig = dataStore.multiTargetConfigFlow.first()
+                _state.value = _state.value.copy(multiTargetConfig = multiTargetConfig)
+            } catch (e: Exception) {
+                // Use defaults if loading fails
+            }
+        }
+
+        // Load packet action rules
+        viewModelScope.launch {
+            packetRulesDataStore.rulesFlow.collect { rules ->
+                _state.value = _state.value.copy(packetActionRules = rules)
+            }
+        }
+
+        // Load theme settings
+        viewModelScope.launch {
+            try {
+                val themeSettings = dataStore.themeSettingsFlow.first()
+                _state.value = _state.value.copy(themeSettings = themeSettings)
+            } catch (e: Exception) {
+                // Use defaults if loading fails
+            }
+        }
+
+        // Load auto-retry settings
+        viewModelScope.launch {
+            try {
+                val autoRetrySettings = dataStore.autoRetrySettingsFlow.first()
+                _state.value = _state.value.copy(autoRetrySettings = autoRetrySettings)
+            } catch (e: Exception) {
+                // Use defaults if loading fails
+            }
+        }
+
+        // Load QoS settings
+        viewModelScope.launch {
+            try {
+                val qosSettings = dataStore.qosSettingsFlow.first()
+                _state.value = _state.value.copy(qosSettings = qosSettings)
+            } catch (e: Exception) {
+                // Use defaults if loading fails
+            }
+        }
+
+        // Load multicast settings
+        viewModelScope.launch {
+            try {
+                val multicastSettings = dataStore.multicastSettingsFlow.first()
+                _state.value = _state.value.copy(multicastSettings = multicastSettings)
+            } catch (e: Exception) {
+                // Use defaults if loading fails
+            }
+        }
     }
 
     fun updateConfig(config: UdpConfig) {
@@ -456,6 +526,91 @@ class TriggerViewModel(
                     recentSuccessRate = 1.0f
                 )
             }
+        }
+    }
+
+    // Theme settings updates
+    fun updateDarkTheme(darkTheme: Boolean?) {
+        _state.value = _state.value.copy(
+            themeSettings = _state.value.themeSettings.copy(darkTheme = darkTheme)
+        )
+        viewModelScope.launch {
+            dataStore.updateDarkTheme(darkTheme)
+        }
+    }
+
+    fun updateUseDynamicColors(enabled: Boolean) {
+        _state.value = _state.value.copy(
+            themeSettings = _state.value.themeSettings.copy(useDynamicColors = enabled)
+        )
+        viewModelScope.launch {
+            dataStore.updateUseDynamicColors(enabled)
+        }
+    }
+
+    // Auto-retry settings updates
+    fun updateAutoRetryEnabled(enabled: Boolean) {
+        _state.value = _state.value.copy(
+            autoRetrySettings = _state.value.autoRetrySettings.copy(enabled = enabled)
+        )
+        viewModelScope.launch {
+            dataStore.updateAutoRetryEnabled(enabled)
+        }
+    }
+
+    fun updateAutoRetryMaxAttempts(attempts: Int) {
+        _state.value = _state.value.copy(
+            autoRetrySettings = _state.value.autoRetrySettings.copy(maxAttempts = attempts.coerceIn(1, 10))
+        )
+        viewModelScope.launch {
+            dataStore.updateAutoRetryMaxAttempts(attempts.coerceIn(1, 10))
+        }
+    }
+
+    fun updateAutoRetryDelayMs(delayMs: Long) {
+        _state.value = _state.value.copy(
+            autoRetrySettings = _state.value.autoRetrySettings.copy(delayMs = delayMs.coerceIn(10, 5000))
+        )
+        viewModelScope.launch {
+            dataStore.updateAutoRetryDelayMs(delayMs.coerceIn(10, 5000))
+        }
+    }
+
+    // QoS settings updates
+    fun updateQosDscpValue(value: Int) {
+        _state.value = _state.value.copy(
+            qosSettings = _state.value.qosSettings.copy(dscpValue = value.coerceIn(0, 63))
+        )
+        viewModelScope.launch {
+            dataStore.updateQosDscpValue(value.coerceIn(0, 63))
+        }
+    }
+
+    fun updateTransportProtocol(protocol: com.udptrigger.data.TransportProtocol) {
+        _state.value = _state.value.copy(
+            qosSettings = _state.value.qosSettings.copy(transportProtocol = protocol)
+        )
+        viewModelScope.launch {
+            dataStore.updateTransportProtocol(protocol)
+        }
+    }
+
+    // Multicast settings updates
+    fun updateMulticastAddress(address: String) {
+        _state.value = _state.value.copy(
+            multicastSettings = _state.value.multicastSettings.copy(address = address)
+        )
+        viewModelScope.launch {
+            dataStore.updateMulticastAddress(address)
+        }
+    }
+
+    fun updateMulticastTtl(ttl: Int) {
+        _state.value = _state.value.copy(
+            multicastSettings = _state.value.multicastSettings.copy(ttl = ttl.coerceIn(0, 255))
+        )
+        viewModelScope.launch {
+            dataStore.updateMulticastTtl(ttl.coerceIn(0, 255))
         }
     }
 
@@ -640,6 +795,40 @@ class TriggerViewModel(
         return true
     }
 
+    /**
+     * Send packet with auto-retry support
+     */
+    private suspend fun sendWithRetry(message: ByteArray): Result<Unit> {
+        val retrySettings = _state.value.autoRetrySettings
+
+        // First attempt
+        val firstResult = withContext(Dispatchers.IO) {
+            udpClient.send(message)
+        }
+
+        if (firstResult.isSuccess) {
+            return firstResult
+        }
+
+        // Auto-retry if enabled
+        if (!retrySettings.enabled) {
+            return firstResult
+        }
+
+        // Retry loop
+        repeat(retrySettings.maxAttempts - 1) { attempt ->
+            delay(retrySettings.delayMs)
+            val retryResult = withContext(Dispatchers.IO) {
+                udpClient.send(message)
+            }
+            if (retryResult.isSuccess) {
+                return retryResult
+            }
+        }
+
+        return firstResult
+    }
+
     fun trigger() {
         if (!checkRateLimit()) {
             _state.value = _state.value.copy(
@@ -655,9 +844,7 @@ class TriggerViewModel(
             val timestamp = System.nanoTime()
             lastTriggerNanoTime = timestamp
             val message = buildPacketMessage(timestamp, 0)
-            val result = withContext(Dispatchers.IO) {
-                udpClient.send(message)
-            }
+            val result = sendWithRetry(message)
             result.fold(
                 onSuccess = {
                     triggerHapticFeedback()
@@ -889,9 +1076,27 @@ class TriggerViewModel(
         // Build packet message
         val message = buildPacketMessage(timestamp, 0)
 
+        // Check if multi-target mode is active
+        val isMultiTarget = _state.value.multiTargetConfig.isActive()
+
         // SEND IMMEDIATELY without coroutine overhead
-        val sendCompleteTime = udpClient.sendFast(message)
+        val sendCompleteTime = if (isMultiTarget) {
+            // Multi-target send
+            val results = sendToMultipleTargetsFast(message)
+            // Use the first successful timestamp, or -1 if all failed
+            results.values.firstOrNull { it > 0 } ?: -1L
+        } else {
+            // Single target send
+            udpClient.sendFast(message)
+        }
         val success = sendCompleteTime > 0
+
+        // For multi-target, calculate packets sent count
+        val packetsSent = if (isMultiTarget) {
+            _state.value.multiTargetConfig.getEnabledTargetCount()
+        } else {
+            1
+        }
 
         // Calculate latency in milliseconds
         val latencyMs = if (success) {
@@ -933,7 +1138,7 @@ class TriggerViewModel(
                     error = null,
                     userFacingError = null,
                     packetHistory = updatedHistory,
-                    totalPacketsSent = _state.value.totalPacketsSent + 1
+                    totalPacketsSent = _state.value.totalPacketsSent + packetsSent
                 )
                 updateHealthTracking(success = true)
             } else {
@@ -1687,5 +1892,274 @@ class TriggerViewModel(
                 )
             }
         )
+    }
+
+    // Multi-Target Management
+
+    /**
+     * Add a new target to the multi-target configuration
+     */
+    fun addTarget(name: String, host: String, port: Int) {
+        val target = com.udptrigger.data.UdpTarget.create(name, host, port)
+        val updatedConfig = _state.value.multiTargetConfig.addTarget(target)
+        _state.value = _state.value.copy(multiTargetConfig = updatedConfig)
+        viewModelScope.launch {
+            dataStore.saveMultiTargetConfig(updatedConfig)
+        }
+    }
+
+    /**
+     * Remove a target from the multi-target configuration
+     */
+    fun removeTarget(id: String) {
+        val updatedConfig = _state.value.multiTargetConfig.removeTarget(id)
+        _state.value = _state.value.copy(multiTargetConfig = updatedConfig)
+        viewModelScope.launch {
+            dataStore.saveMultiTargetConfig(updatedConfig)
+        }
+    }
+
+    /**
+     * Update an existing target
+     */
+    fun updateTarget(id: String, name: String, host: String, port: Int) {
+        val existingTarget = _state.value.multiTargetConfig.targets.find { it.id == id }
+        if (existingTarget != null) {
+            val updatedTarget = existingTarget.copy(
+                name = name,
+                host = host,
+                port = port
+            )
+            val updatedConfig = _state.value.multiTargetConfig.updateTarget(id, updatedTarget)
+            _state.value = _state.value.copy(multiTargetConfig = updatedConfig)
+            viewModelScope.launch {
+                dataStore.saveMultiTargetConfig(updatedConfig)
+            }
+        }
+    }
+
+    /**
+     * Toggle a target's enabled state
+     */
+    fun toggleTargetEnabled(id: String) {
+        val updatedConfig = _state.value.multiTargetConfig.toggleTarget(id)
+        _state.value = _state.value.copy(multiTargetConfig = updatedConfig)
+        viewModelScope.launch {
+            dataStore.saveMultiTargetConfig(updatedConfig)
+        }
+    }
+
+    /**
+     * Enable or disable multi-target mode
+     */
+    fun setMultiTargetEnabled(enabled: Boolean) {
+        val updatedConfig = _state.value.multiTargetConfig.copy(enabled = enabled)
+        _state.value = _state.value.copy(multiTargetConfig = updatedConfig)
+        viewModelScope.launch {
+            dataStore.saveMultiTargetConfig(updatedConfig)
+        }
+    }
+
+    /**
+     * Update the send mode for multi-target
+     */
+    fun setMultiTargetMode(mode: com.udptrigger.data.SendMode) {
+        val updatedConfig = _state.value.multiTargetConfig.copy(sendMode = mode)
+        _state.value = _state.value.copy(multiTargetConfig = updatedConfig)
+        viewModelScope.launch {
+            dataStore.saveMultiTargetConfig(updatedConfig)
+        }
+    }
+
+    /**
+     * Update the sequential delay for multi-target
+     */
+    fun setMultiTargetDelay(delayMs: Long) {
+        val updatedConfig = _state.value.multiTargetConfig.copy(sequentialDelayMs = delayMs.coerceIn(0, 5000))
+        _state.value = _state.value.copy(multiTargetConfig = updatedConfig)
+        viewModelScope.launch {
+            dataStore.saveMultiTargetConfig(updatedConfig)
+        }
+    }
+
+    /**
+     * Reorder targets
+     */
+    fun reorderTargets(newOrder: List<String>) {
+        val updatedConfig = _state.value.multiTargetConfig.reorderTargets(newOrder)
+        _state.value = _state.value.copy(multiTargetConfig = updatedConfig)
+        viewModelScope.launch {
+            dataStore.saveMultiTargetConfig(updatedConfig)
+        }
+    }
+
+    /**
+     * Update target status after a send attempt
+     */
+    private fun updateTargetStatus(targetId: String, success: Boolean) {
+        val target = _state.value.multiTargetConfig.targets.find { it.id == targetId } ?: return
+        val updatedTarget = target.withStatus(success)
+        val updatedConfig = _state.value.multiTargetConfig.updateTarget(targetId, updatedTarget)
+        _state.value = _state.value.copy(multiTargetConfig = updatedConfig)
+    }
+
+    /**
+     * Send to multiple targets (used in triggerFast)
+     */
+    private fun sendToMultipleTargetsFast(data: ByteArray): Map<String, Long> {
+        val config = _state.value.multiTargetConfig
+        if (!config.isActive()) return emptyMap()
+
+        val enabledTargets = config.getEnabledTargets()
+        if (enabledTargets.isEmpty()) return emptyMap()
+
+        return when (config.sendMode) {
+            com.udptrigger.data.SendMode.SEQUENTIAL, com.udptrigger.data.SendMode.PARALLEL -> {
+                // Prepare target addresses
+                val targets = enabledTargets.map { target ->
+                    try {
+                        Pair(java.net.InetAddress.getByName(target.host), target.port) to target.id
+                    } catch (e: Exception) {
+                        null
+                    }
+                }.filterNotNull().map { it.first to it.second }
+
+                // Send and collect results
+                val targetPairs = targets.map { it.first }
+                val results = udpClient.sendFastMultiple(data, targetPairs)
+
+                // Update target statuses
+                val targetIds = targets.associate { "${it.first.first.hostAddress}:${it.first.second}" to it.second }
+                results.forEach { (targetKey, timestamp) ->
+                    val targetId = targetIds[targetKey]
+                    if (targetId != null) {
+                        updateTargetStatus(targetId, timestamp > 0)
+                    }
+                }
+
+                results
+            }
+            com.udptrigger.data.SendMode.ROUND_ROBIN -> {
+                // Send to next target in rotation
+                val targetIndex = _state.value.roundRobinIndex % enabledTargets.size
+                val target = enabledTargets[targetIndex]
+
+                try {
+                    val address = java.net.InetAddress.getByName(target.host)
+                    val result = udpClient.sendFast(data)
+                    updateTargetStatus(target.id, result > 0)
+
+                    // Move to next target
+                    val nextIndex = (targetIndex + 1) % enabledTargets.size
+                    _state.value = _state.value.copy(roundRobinIndex = nextIndex)
+
+                    if (result > 0) {
+                        mapOf("${address.hostAddress}:${target.port}" to result)
+                    } else {
+                        emptyMap()
+                    }
+                } catch (e: Exception) {
+                    updateTargetStatus(target.id, false)
+                    emptyMap()
+                }
+            }
+        }
+    }
+
+    // Packet Action Rules Management
+
+    /**
+     * Add a new packet action rule
+     */
+    fun addPacketActionRule(
+        name: String,
+        matchPattern: String,
+        useRegex: Boolean,
+        actionType: com.udptrigger.data.PacketActionType,
+        actionData: String,
+        replyHost: String,
+        replyPort: Int
+    ) {
+        viewModelScope.launch {
+            val rule = com.udptrigger.data.PacketActionRule(
+                id = java.util.UUID.randomUUID().toString(),
+                name = name,
+                enabled = true,
+                matchPattern = matchPattern,
+                useRegex = useRegex,
+                actionType = actionType,
+                actionData = actionData,
+                replyHost = replyHost,
+                replyPort = replyPort
+            )
+            packetRulesDataStore.addRule(rule)
+        }
+    }
+
+    /**
+     * Update an existing packet action rule
+     */
+    fun updatePacketActionRule(
+        id: String,
+        name: String,
+        matchPattern: String,
+        useRegex: Boolean,
+        actionType: com.udptrigger.data.PacketActionType,
+        actionData: String,
+        replyHost: String,
+        replyPort: Int,
+        enabled: Boolean
+    ) {
+        viewModelScope.launch {
+            val rule = com.udptrigger.data.PacketActionRule(
+                id = id,
+                name = name,
+                enabled = enabled,
+                matchPattern = matchPattern,
+                useRegex = useRegex,
+                actionType = actionType,
+                actionData = actionData,
+                replyHost = replyHost,
+                replyPort = replyPort
+            )
+            packetRulesDataStore.updateRule(rule)
+        }
+    }
+
+    /**
+     * Delete a packet action rule
+     */
+    fun deletePacketActionRule(ruleId: String) {
+        viewModelScope.launch {
+            packetRulesDataStore.deleteRule(ruleId)
+        }
+    }
+
+    /**
+     * Toggle a packet action rule's enabled state
+     */
+    fun togglePacketActionRule(ruleId: String, enabled: Boolean) {
+        viewModelScope.launch {
+            packetRulesDataStore.toggleRule(ruleId, enabled)
+        }
+    }
+
+    /**
+     * Test a packet action rule (for validation)
+     */
+    fun testPacketActionRule(
+        matchPattern: String,
+        useRegex: Boolean,
+        packetContent: String
+    ): Boolean {
+        return if (useRegex) {
+            try {
+                Regex(matchPattern).containsMatchIn(packetContent)
+            } catch (e: Exception) {
+                false
+            }
+        } else {
+            packetContent.contains(matchPattern)
+        }
     }
 }

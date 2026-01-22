@@ -2,6 +2,25 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- Android 14+ query declarations for interacting with other apps -->
+    <queries>
+        <!-- Query for UDP socket connections -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="udptrigger" />
+        </intent>
+        <!-- Query for custom scheme handling -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="http" />
+        </intent>
+        <!-- Query for HTTPS URLs (privacy policy, etc.) -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+    </queries>
+
     <!-- Internet permission for UDP transmission -->
     <uses-permission android:name="android.permission.INTERNET" />
 
@@ -26,27 +45,72 @@
 
     <application
         android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.UdpTrigger"
+        android:theme="@style/Theme.UdpTrigger.Splash"
         tools:targetApi="34">
 
+        <!-- Splash Activity - Launcher -->
         <activity
-            android:name=".MainActivity"
+            android:name=".SplashActivity"
             android:exported="true"
-            android:theme="@style/Theme.UdpTrigger"
-            android:windowSoftInputMode="adjustResize"
-            android:launchMode="singleTop">
+            android:theme="@style/Theme.UdpTrigger.Splash"
+            android:screenOrientation="portrait">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- App shortcuts metadata -->
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
+        </activity>
+
+        <!-- Main Activity -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="false"
+            android:theme="@style/Theme.UdpTrigger"
+            android:windowSoftInputMode="adjustResize"
+            android:launchMode="singleTop">
             <!-- Handle widget trigger action -->
             <intent-filter>
                 <action android:name="com.udptrigger.TRIGGER_UDP" />
                 <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <!-- Deep link handling -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="udptrigger" />
+            </intent-filter>
+        </activity>
+
+        <!-- Invisible activity for instant widget trigger -->
+        <activity
+            android:name=".widget.WidgetTriggerActivity"
+            android:exported="false"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:launchMode="singleTask"
+            android:excludeFromRecents="true">
+            <intent-filter>
+                <action android:name="com.udptrigger.WIDGET_TRIGGER" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <!-- Widget Configuration Activity -->
+        <activity
+            android:name=".widget.WidgetConfigurationActivity"
+            android:exported="true"
+            android:theme="@style/Theme.UdpTrigger">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
             </intent-filter>
         </activity>
 

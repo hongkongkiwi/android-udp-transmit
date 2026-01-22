@@ -1,12 +1,20 @@
 package com.udptrigger.data
 
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.os.Build
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.udptrigger.MainActivity
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -118,6 +126,77 @@ class PacketRulesDataStore(private val context: Context) {
 }
 
 /**
+ * Notification helper for packet action notifications
+ */
+private const val NOTIFICATION_CHANNEL_ID = "packet_action_notifications"
+private const val NOTIFICATION_ID_BASE = 10000
+
+/**
+ * Create notification channel for packet actions (required for Android O+)
+ */
+private fun ensureNotificationChannel(context: Context) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+        val channel = NotificationChannel(
+            NOTIFICATION_CHANNEL_ID,
+            "Packet Actions",
+            NotificationManager.IMPORTANCE_HIGH
+        ).apply {
+            description = "Shows notifications when UDP packet rules match"
+            setShowBadge(false)
+            enableVibration(false)
+            setSound(null, null)
+        }
+        notificationManager?.createNotificationChannel(channel)
+    }
+}
+
+/**
+ * Show a notification for a packet action
+ */
+private fun showPacketActionNotification(
+    context: Context,
+    ruleId: String,
+    ruleName: String,
+    message: String,
+    packetContent: String,
+    sourceAddress: String,
+    sourcePort: Int
+) {
+    ensureNotificationChannel(context)
+
+    val notificationId = NOTIFICATION_ID_BASE + ruleId.hashCode().mod(1000)
+
+    // Intent to open app when notification is tapped
+    val pendingIntent = PendingIntent.getActivity(
+        context,
+        notificationId,
+        Intent(context, MainActivity::class.java).apply {
+            flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            action = Intent.ACTION_MAIN
+            addCategory(Intent.CATEGORY_LAUNCHER)
+        },
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+    )
+
+    val notification = NotificationCompat.Builder(context, NOTIFICATION_CHANNEL_ID)
+        .setContentTitle("Packet Rule: $ruleName")
+        .setContentText(message)
+        .setSmallIcon(android.R.drawable.ic_dialog_info)
+        .setPriority(NotificationCompat.PRIORITY_HIGH)
+        .setAutoCancel(true)
+        .setContentIntent(pendingIntent)
+        .build()
+
+    try {
+        val notificationManager = NotificationManagerCompat.from(context)
+        notificationManager.notify(notificationId, notification)
+    } catch (e: Exception) {
+        // Notification failed, log silently
+    }
+}
+
+/**
  * Execute action when a packet rule matches
  */
 suspend fun executePacketAction(
@@ -129,16 +208,17 @@ suspend fun executePacketAction(
 ) {
     when (rule.actionType) {
         PacketActionType.NOTIFICATION -> {
-            // Show notification (would require notification permission)
+            // Show actual Android notification
             val message = rule.actionData.ifEmpty { "Packet matched: ${rule.name}" }
-            // Note: Actual notification implementation would go here
-            // For now, we use a broadcast that the app can listen to
-            val intent = Intent("com.udptrigger.PACKET_ACTION_NOTIFICATION").apply {
-                putExtra("rule_name", rule.name)
-                putExtra("message", message)
-                putExtra("packet_content", packetContent)
-            }
-            context.sendBroadcast(intent)
+            showPacketActionNotification(
+                context = context,
+                ruleId = rule.id,
+                ruleName = rule.name,
+                message = message,
+                packetContent = packetContent,
+                sourceAddress = sourceAddress,
+                sourcePort = sourcePort
+            )
         }
 
         PacketActionType.VIBRATE -> {
@@ -171,12 +251,25 @@ suspend fun executePacketAction(
             val replyHost = rule.replyHost.ifEmpty { sourceAddress }
             val replyPort = if (rule.replyPort > 0) rule.replyPort else sourcePort
 
-            val sendIntent = Intent("com.udptrigger.SEND_PACKET").apply {
-                putExtra("host", replyHost)
-                putExtra("port", replyPort)
-                putExtra("data", replyData)
+            // Actually send UDP reply packet
+            try {
+                val udpClient = com.udptrigger.domain.UdpClient()
+                udpClient.initialize(replyHost, replyPort)
+                val packetBytes = replyData.toByteArray(Charsets.UTF_8)
+                val result = udpClient.send(packetBytes)
+                udpClient.closeSync()
+
+                // Also send broadcast for UI update
+                val broadcastIntent = Intent("com.udptrigger.PACKET_SENT").apply {
+                    putExtra("host", replyHost)
+                    putExtra("port", replyPort)
+                    putExtra("data", replyData)
+                    putExtra("success", result.isSuccess)
+                }
+                context.sendBroadcast(broadcastIntent)
+            } catch (e: Exception) {
+                // Send failed
             }
-            context.sendBroadcast(sendIntent)
         }
 
         PacketActionType.RUN_INTENT -> {

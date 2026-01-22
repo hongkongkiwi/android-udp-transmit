@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Spanish translations -->
+    <string name="app_name">UDP Trigger</string>
+    <string name="channel_foreground">Servicio en primer plano</string>
+    <string name="channel_foreground_desc">Notificaciones de fondo</string>
+    <string name="channel_sent">Paquete enviado</string>
+    <string name="channel_sent_desc">Notificaciones de envío UDP</string>
+    <string name="channel_received">Paquete recibido</string>
+    <string name="channel_received_desc">Notificaciones de recepción UDP</string>
+    <string name="channel_errors">Errores</string>
+    <string name="channel_errors_desc">Errores de conexión y advertencias</string>
+    <string name="channel_general">General</string>
+    <string name="channel_general_desc">Notificaciones generales</string>
+    <string name="scan_qr_code">Escanear código QR</string>
+    <string name="share_config">Compartir configuración</string>
+    <string name="backup_settings">Hacer copia de seguridad</string>
+    <string name="restore_settings">Restaurar configuración</string>
+    <string name="search">Buscar</string>
+    <string name="search_presets">Buscar presets</string>
+    <string name="search_history">Buscar historial</string>
+    <string name="no_results">Sin resultados</string>
+    <string name="encryption_password">Contraseña</string>
+    <string name="encrypt_backup">Cifrar copia de seguridad</string>
+    <string name="decrypt_backup">Descifrar copia de seguridad</string>
+    <string name="password_required">Introduzca contraseña</string>
+    <string name="incorrect_password">Contraseña incorrecta</string>
+    <string name="enter_host">Introducir host</string>
+    <string name="enter_port">Introducir puerto</string>
+    <string name="enter_content">Introducir contenido</string>
+    <string name="send_trigger">Enviar</string>
+    <string name="connect">Conectar</string>
+    <string name="disconnect">Desconectar</string>
+    <string name="settings">Configuración</string>
+    <string name="presets">Presets</string>
+    <string name="history">Historial</string>
+    <string name="statistics">Estadísticas</string>
+    <string name="diagnostics">Diagnóstico</string>
+    <string name="advanced">Avanzado</string>
+    <string name="dark_mode">Modo oscuro</string>
+    <string name="about">Acerca de</string>
+    <string name="version">Versión</string>
+    <string name="connection_status">Estado de conexión</string>
+    <string name="packet_sent">Enviado</string>
+    <string name="packet_received">Recibido</string>
+    <string name="success_rate">Tasa de éxito</string>
+    <string name="latency">Latencia</string>
+    <string name="burst_mode">Modo ráfaga</string>
+    <string name="burst_count">Número de paquetes</string>
+    <string name="burst_delay">Intervalo de envío</string>
+</resources>

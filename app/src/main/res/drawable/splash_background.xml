@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Background color -->
+    <item android:drawable="@color/splash_background"/>
+
+    <!-- Centered icon with animation -->
+    <item>
+        <bitmap
+            android:gravity="center"
+            android:src="@drawable/ic_splash_icon"/>
+    </item>
+
+    <!-- App name below icon -->
+    <item android:bottom="48dp">
+        <shape android:shape="rectangle">
+            <solid android:color="@android:color/transparent"/>
+        </shape>
+    </item>
+</layer-list>

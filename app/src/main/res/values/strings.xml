@@ -140,4 +140,70 @@
     <string name="widget_small_description">Quick trigger button with status</string>
     <string name="widget_medium_description">Trigger button with preset and config</string>
     <string name="widget_large_description">Full widget with stats and controls</string>
+
+    <!-- Shortcuts -->
+    <string name="shortcut_trigger_short">Trigger</string>
+    <string name="shortcut_trigger_long">Send UDP Trigger</string>
+    <string name="shortcut_trigger_disabled">Trigger shortcut unavailable</string>
+    <string name="shortcut_connect_short">Connect</string>
+    <string name="shortcut_connect_long">Connect to host</string>
+    <string name="shortcut_connect_disabled">Connect shortcut unavailable</string>
+    <string name="shortcut_disconnect_short">Disconnect</string>
+    <string name="shortcut_disconnect_long">Disconnect from host</string>
+    <string name="shortcut_disconnect_disabled">Disconnect shortcut unavailable</string>
+    <string name="shortcut_preset_short">Preset</string>
+    <string name="shortcut_preset_long">Load preset</string>
+    <string name="shortcut_preset_disabled">Preset shortcut unavailable</string>
+    <string name="shortcut_settings_short">Settings</string>
+    <string name="shortcut_settings_long">Open settings</string>
+    <string name="shortcut_settings_disabled">Settings shortcut unavailable</string>
+
+    <!-- Notification Channels -->
+    <string name="channel_foreground">Foreground Service</string>
+    <string name="channel_foreground_desc">Background operation notifications</string>
+    <string name="channel_sent">Packet Sent</string>
+    <string name="channel_sent_desc">UDP packet sent notifications</string>
+    <string name="channel_received">Packet Received</string>
+    <string name="channel_received_desc">UDP packet received notifications</string>
+    <string name="channel_errors">Errors</string>
+    <string name="channel_errors_desc">Connection errors and warnings</string>
+    <string name="channel_general">General</string>
+    <string name="channel_general_desc">General notifications</string>
+
+    <!-- QR Code -->
+    <string name="scan_qr_code">Scan QR Code</string>
+    <string name="share_config">Share Config</string>
+    <string name="generate_qr">Generate QR Code</string>
+    <string name="qr_code_generated">QR code generated</string>
+    <string name="qr_code_scan_failed">QR code scan failed</string>
+    <string name="invalid_qr_code">Invalid QR code format</string>
+
+    <!-- Backup & Restore -->
+    <string name="backup_settings">Backup Settings</string>
+    <string name="restore_settings">Restore Settings</string>
+    <string name="backup_success">Backup created successfully</string>
+    <string name="backup_failed">Backup failed: %1$s</string>
+    <string name="restore_success">Settings restored successfully</string>
+    <string name="restore_failed">Restore failed: %1$s</string>
+    <string name="backup_items_restored">%1$d items restored</string>
+
+    <!-- Search -->
+    <string name="search">Search</string>
+    <string name="search_presets">Search presets</string>
+    <string name="search_history">Search history</string>
+    <string name="no_results">No results found</string>
+    <string name="clear_search">Clear search</string>
+    <string name="search_hint">Type to search…</string>
+
+    <!-- Encryption -->
+    <string name="encryption_password">Password</string>
+    <string name="encrypt_backup">Encrypt Backup</string>
+    <string name="decrypt_backup">Decrypt Backup</string>
+    <string name="password_required">Please enter password</string>
+    <string name="incorrect_password">Incorrect password</string>
+    <string name="enter_password">Enter password</string>
+    <string name="confirm_password">Confirm password</string>
+    <string name="password_mismatch">Passwords do not match</string>
+    <string name="backup_encrypted">Backup encrypted</string>
+    <string name="backup_decrypted">Backup decrypted</string>
 </resources>

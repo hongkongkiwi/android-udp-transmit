@@ -135,8 +135,10 @@ class MainActivity : ComponentActivity() {
     companion object {
         const val ACTION_CONNECT = "com.udptrigger.CONNECT"
         const val ACTION_DISCONNECT = "com.udptrigger.DISCONNECT"
+        const val ACTION_TRIGGER_UDP = "com.udptrigger.TRIGGER_UDP"
         const val EXTRA_AUTO_CONNECT = "auto_connect"
         const val EXTRA_AUTO_DISCONNECT = "auto_disconnect"
+        const val EXTRA_AUTO_TRIGGER = "auto_trigger"
     }
 
     /**
@@ -157,6 +159,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         // Initialize crash reporter first
         com.udptrigger.util.CrashReporterSingleton.initialize(this)
+        // Initialize error handler with crash analytics
+        com.udptrigger.util.ErrorHandler.initialize(this)
         // Check for pending intent actions from automation
         handleIntentAction(intent)
         enableEdgeToEdge()
@@ -198,8 +202,10 @@ class MainActivity : ComponentActivity() {
                     pendingIntentAction = EXTRA_AUTO_DISCONNECT
                 }
             }
-            "com.udptrigger.TRIGGER_UDP" -> {
-                // Widget trigger - handled in TriggerScreen
+            ACTION_TRIGGER_UDP -> {
+                if (intent.getBooleanExtra(EXTRA_AUTO_TRIGGER, false)) {
+                    pendingIntentAction = EXTRA_AUTO_TRIGGER
+                }
             }
         }
     }

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+   Data Extraction Rules for Android 12+ backup and transfer.
+   This file controls what app data is included in:
+   - Full device backup (adb backup)
+   - Cloud backup (Google Drive)
+   - Device-to-device transfer
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <!-- Include: User configuration, preferences, settings -->
+        <include domain="sharedpref" path="." />
+        <include domain="database" path="." />
+        <include domain="file" path="datastore/" />
+
+        <!-- Exclude: Cache files, crash reports, sensitive temp data -->
+        <exclude domain="cache" path="." />
+        <exclude domain="no_backup" path="." />
+        <exclude domain="file" path="crashes/" />
+        <exclude domain="file" path="logs/" />
+    </cloud-backup>
+
+    <device-transfer>
+        <!-- Include all app data for device transfer -->
+        <include domain="sharedpref" path="." />
+        <include domain="database" path="." />
+        <include domain="file" path="datastore/" />
+
+        <!-- Exclude cache only -->
+        <exclude domain="cache" path="." />
+    </device-transfer>
+</data-extraction-rules>

@@ -1,5 +1,6 @@
 package com.udptrigger.util
 
+import android.content.Context
 import java.net.ConnectException
 import java.net.PortUnreachableException
 import java.net.SocketException
@@ -20,6 +21,22 @@ data class ErrorInfo(
  * Converts technical exceptions into user-friendly error messages
  */
 object ErrorHandler {
+
+    private var crashAnalyticsManager: CrashAnalyticsManager? = null
+
+    /**
+     * Initialize the error handler with context for crash reporting
+     */
+    fun initialize(context: Context) {
+        crashAnalyticsManager = CrashAnalyticsManager(context)
+    }
+
+    /**
+     * Record a crash report (internal errors that should be reported)
+     */
+    fun recordCrash(throwable: Throwable) {
+        crashAnalyticsManager?.recordCrash(throwable)
+    }
 
     fun getErrorInfo(throwable: Throwable?, context: String = ""): ErrorInfo {
         val cause = throwable?.cause ?: throwable

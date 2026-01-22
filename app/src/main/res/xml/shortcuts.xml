@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Trigger Shortcut -->
+    <shortcut
+        android:shortcutId="trigger"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_trigger"
+        android:shortcutShortLabel="@string/shortcut_trigger_short"
+        android:shortcutLongLabel="@string/shortcut_trigger_long"
+        android:shortcutDisabledMessage="@string/shortcut_trigger_disabled">
+
+        <intent
+            android:action="com.udptrigger.TRIGGER"
+            android:targetPackage="com.udptrigger"
+            android:targetClass="com.udptrigger.MainActivity" />
+        <categories android:name="android.shortcut.conversation" />
+    </shortcut>
+
+    <!-- Connect Shortcut -->
+    <shortcut
+        android:shortcutId="connect"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_connect"
+        android:shortcutShortLabel="@string/shortcut_connect_short"
+        android:shortcutLongLabel="@string/shortcut_connect_long"
+        android:shortcutDisabledMessage="@string/shortcut_connect_disabled">
+
+        <intent
+            android:action="com.udptrigger.CONNECT"
+            android:targetPackage="com.udptrigger"
+            android:targetClass="com.udptrigger.MainActivity" />
+        <categories android:name="android.shortcut.conversation" />
+    </shortcut>
+
+    <!-- Disconnect Shortcut -->
+    <shortcut
+        android:shortcutId="disconnect"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_disconnect"
+        android:shortcutShortLabel="@string/shortcut_disconnect_short"
+        android:shortcutLongLabel="@string/shortcut_disconnect_long"
+        android:shortcutDisabledMessage="@string/shortcut_disconnect_disabled">
+
+        <intent
+            android:action="com.udptrigger.DISCONNECT"
+            android:targetPackage="com.udptrigger"
+            android:targetClass="com.udptrigger.MainActivity" />
+        <categories android:name="android.shortcut.conversation" />
+    </shortcut>
+
+    <!-- Preset Shortcut -->
+    <shortcut
+        android:shortcutId="preset"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_preset"
+        android:shortcutShortLabel="@string/shortcut_preset_short"
+        android:shortcutLongLabel="@string/shortcut_preset_long"
+        android:shortcutDisabledMessage="@string/shortcut_preset_disabled">
+
+        <intent
+            android:action="com.udptrigger.PRESET"
+            android:targetPackage="com.udptrigger"
+            android:targetClass="com.udptrigger.MainActivity" />
+        <categories android:name="android.shortcut.conversation" />
+    </shortcut>
+
+    <!-- Settings Shortcut -->
+    <shortcut
+        android:shortcutId="settings"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_settings"
+        android:shortcutShortLabel="@string/shortcut_settings_short"
+        android:shortcutLongLabel="@string/shortcut_settings_long"
+        android:shortcutDisabledMessage="@string/shortcut_settings_disabled">
+
+        <intent
+            android:action="com.udptrigger.SETTINGS"
+            android:targetPackage="com.udptrigger"
+            android:targetClass="com.udptrigger.MainActivity" />
+        <categories android:name="android.shortcut.conversation" />
+    </shortcut>
+
+</shortcuts>

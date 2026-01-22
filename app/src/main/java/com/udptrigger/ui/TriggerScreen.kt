@@ -16,10 +16,13 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Create
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.Share
@@ -91,6 +94,7 @@ fun TriggerScreen(
     var showCrashReports by remember { mutableStateOf(false) }
     var showAnalytics by remember { mutableStateOf(false) }
     var showNetworkDiscovery by remember { mutableStateOf(false) }
+    var showAutomationManager by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -203,6 +207,7 @@ fun TriggerScreen(
                     burstDelayMs = state.burstMode.delayMs,
                     burstIsSending = state.burstMode.isSending,
                     onBurstModeChanged = { enabled, count, delay -> triggerViewModel.updateBurstMode(enabled, count, delay) },
+                    onShowAutomationManager = { showAutomationManager = true },
                     modifier = Modifier.padding(bottom = 24.dp)
                 )
             }
@@ -565,7 +570,15 @@ fun TriggerScreen(
             onDismiss = { showAbout = false },
             onShowCrashReports = { showCrashReports = true },
             onShowAnalytics = { showAnalytics = true },
-            onShowNetworkDiscovery = { showNetworkDiscovery = true }
+            onShowNetworkDiscovery = { showNetworkDiscovery = true },
+            onShowPrivacyPolicy = {
+                try {
+                    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://yourdomain.com/privacy-policy"))
+                    context.startActivity(intent)
+                } catch (e: Exception) {
+                    // Handle error - could show a toast
+                }
+            }
         )
     }
 
@@ -595,6 +608,13 @@ fun TriggerScreen(
         )
     }
 
+    if (showAutomationManager) {
+        AutomationManagerDialog(
+            onDismiss = { showAutomationManager = false },
+            context = context
+        )
+    }
+
     // Transparent key event listener overlay
     KeyEventListener(
         onKeyPressed = object : KeyEventCallback {
@@ -614,7 +634,8 @@ fun AboutDialog(
     onDismiss: () -> Unit,
     onShowCrashReports: () -> Unit = {},
     onShowAnalytics: () -> Unit = {},
-    onShowNetworkDiscovery: () -> Unit = {}
+    onShowNetworkDiscovery: () -> Unit = {},
+    onShowPrivacyPolicy: () -> Unit = {}
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -660,6 +681,9 @@ fun AboutDialog(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End)
             ) {
+                TextButton(onClick = onShowPrivacyPolicy) {
+                    Text("Privacy")
+                }
                 TextButton(onClick = onShowCrashReports) {
                     Text("Crash Reports")
                 }
@@ -1222,6 +1246,7 @@ fun SettingsSection(
     burstDelayMs: Long,
     @Suppress("UNUSED_PARAMETER") burstIsSending: Boolean,
     onBurstModeChanged: (Boolean, Int, Long) -> Unit,
+    onShowAutomationManager: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -1539,6 +1564,18 @@ fun SettingsSection(
                         )
                     }
                 }
+            }
+
+            HorizontalDivider()
+
+            // Automation Manager button
+            OutlinedButton(
+                onClick = onShowAutomationManager,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.Settings, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Automation Manager")
             }
         }
     }
@@ -2897,6 +2934,798 @@ fun NetworkDiscoveryDialog(
         confirmButton = {
             TextButton(onClick = onDismiss) {
                 Text("Close")
+            }
+        }
+    )
+}
+
+@Composable
+fun AutomationManagerDialog(
+    onDismiss: () -> Unit,
+    context: Context
+) {
+    val automationManager = remember { com.udptrigger.data.AutomationManager(context) }
+    val automations by automationManager.automations.collectAsState()
+    val activeAutomations by automationManager.activeAutomations.collectAsState()
+    val executionLogs by automationManager.executionLogs.collectAsState()
+    val coroutineScope = rememberCoroutineScope()
+
+    var selectedTab by remember { mutableIntStateOf(0) }
+    var showAddDialog by remember { mutableStateOf(false) }
+    var showEditDialog by remember { mutableStateOf(false) }
+    var editingAutomation by remember { mutableStateOf<com.udptrigger.data.AutomationManager.Automation?>(null) }
+    var showLogsDialog by remember { mutableStateOf(false) }
+    var showVariablesDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        automationManager.loadAutomations()
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Automation Manager") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 600.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // Tabs
+                TabRow(selectedTabIndex = selectedTab) {
+                    Tab(
+                        selected = selectedTab == 0,
+                        onClick = { selectedTab = 0 },
+                        text = { Text("Automations") }
+                    )
+                    Tab(
+                        selected = selectedTab == 1,
+                        onClick = { selectedTab = 1 },
+                        text = { Text("Logs") }
+                    )
+                    Tab(
+                        selected = selectedTab == 2,
+                        onClick = { selectedTab = 2 },
+                        text = { Text("Variables") }
+                    )
+                }
+
+                // Tab content
+                when (selectedTab) {
+                    0 -> AutomationsTabContent(
+                        automations = automations,
+                        activeAutomations = activeAutomations,
+                        onToggle = { id, enabled ->
+                            coroutineScope.launch {
+                                automationManager.toggleAutomation(id, enabled)
+                            }
+                        },
+                        onEdit = { automation ->
+                            editingAutomation = automation
+                            showEditDialog = true
+                        },
+                        onDelete = { id ->
+                            coroutineScope.launch {
+                                automationManager.deleteAutomation(id)
+                            }
+                        },
+                        onExecute = { automation ->
+                            coroutineScope.launch {
+                                automationManager.executeAutomation(automation)
+                            }
+                        }
+                    )
+                    1 -> LogsTabContent(
+                        logs = executionLogs,
+                        onClearLogs = {
+                            automationManager.clearExecutionLogs()
+                        }
+                    )
+                    2 -> VariablesTabContent(
+                        variables = automationManager.getVariables()
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
+            ) {
+                Button(
+                    onClick = { showAddDialog = true }
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Add Automation")
+                }
+                TextButton(onClick = onDismiss) {
+                    Text("Close")
+                }
+            }
+        }
+    )
+
+    // Add Automation Dialog
+    if (showAddDialog) {
+        AutomationEditDialog(
+            onDismiss = { showAddDialog = false },
+            onSave = { automation ->
+                coroutineScope.launch {
+                    automationManager.addAutomation(automation)
+                }
+                showAddDialog = false
+            },
+            context = context
+        )
+    }
+
+    // Edit Automation Dialog
+    if (showEditDialog && editingAutomation != null) {
+        AutomationEditDialog(
+            onDismiss = {
+                showEditDialog = false
+                editingAutomation = null
+            },
+            onSave = { automation ->
+                coroutineScope.launch {
+                    automationManager.updateAutomation(automation)
+                }
+                showEditDialog = false
+                editingAutomation = null
+            },
+            context = context,
+            existingAutomation = editingAutomation
+        )
+    }
+}
+
+@Composable
+private fun AutomationsTabContent(
+    automations: List<com.udptrigger.data.AutomationManager.Automation>,
+    activeAutomations: Set<String>,
+    onToggle: (String, Boolean) -> Unit,
+    onEdit: (com.udptrigger.data.AutomationManager.Automation) -> Unit,
+    onDelete: (String) -> Unit,
+    onExecute: (com.udptrigger.data.AutomationManager.Automation) -> Unit
+) {
+    if (automations.isEmpty()) {
+        Box(
+            modifier = Modifier.fillMaxWidth(),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    Icons.Default.Info,
+                    contentDescription = null,
+                    modifier = Modifier.size(48.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = "No automations yet",
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                Text(
+                    text = "Create your first automation to get started",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    } else {
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(automations.size) { index ->
+                val automation = automations[index]
+                val isActive = activeAutomations.contains(automation.id)
+
+                AutomationCard(
+                    automation = automation,
+                    isActive = isActive,
+                    onToggle = { onToggle(automation.id, !automation.enabled) },
+                    onEdit = { onEdit(automation) },
+                    onDelete = { onDelete(automation.id) },
+                    onExecute = { onExecute(automation) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AutomationCard(
+    automation: com.udptrigger.data.AutomationManager.Automation,
+    isActive: Boolean,
+    onToggle: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+    onExecute: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isActive) {
+                MaterialTheme.colorScheme.primaryContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant
+            }
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = automation.name,
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        if (isActive) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.primary,
+                                shape = MaterialTheme.shapes.small
+                            ) {
+                                Text(
+                                    text = "Running",
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    style = MaterialTheme.typography.labelSmall
+                                )
+                            }
+                        }
+                    }
+                    if (automation.description.isNotEmpty()) {
+                        Text(
+                            text = automation.description,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        modifier = Modifier.padding(top = 4.dp)
+                    ) {
+                        Text(
+                            text = "Actions: ${automation.actions.size}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "Runs: ${automation.executionCount}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (automation.cooldownMs > 0) {
+                            Text(
+                                text = "Cooldown: ${automation.cooldownMs / 1000}s",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+                Switch(
+                    checked = automation.enabled,
+                    onCheckedChange = { onToggle() }
+                )
+            }
+
+            // Trigger and action preview
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onExecute,
+                    enabled = automation.enabled && !isActive,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Run Now")
+                }
+                OutlinedButton(
+                    onClick = onEdit,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.Create, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Edit")
+                }
+                OutlinedButton(
+                    onClick = onDelete,
+                    modifier = Modifier.size(width = 60.dp, height = 40.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LogsTabContent(
+    logs: List<com.udptrigger.data.AutomationManager.ExecutionLog>,
+    onClearLogs: () -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Recent Activity",
+                style = MaterialTheme.typography.titleSmall
+            )
+            if (logs.isNotEmpty()) {
+                TextButton(onClick = onClearLogs) {
+                    Text("Clear")
+                }
+            }
+        }
+
+        if (logs.isEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "No execution logs yet",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                items(logs.size) { index ->
+                    val log = logs[index]
+                    LogEntryCard(log)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LogEntryCard(log: com.udptrigger.data.AutomationManager.ExecutionLog) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = when (log.status) {
+                com.udptrigger.data.AutomationManager.ExecutionStatus.SUCCESS -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                com.udptrigger.data.AutomationManager.ExecutionStatus.FAILED -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
+                else -> MaterialTheme.colorScheme.surfaceVariant
+            }
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = log.automationName,
+                    style = MaterialTheme.typography.titleSmall
+                )
+                Text(
+                    text = formatDate(log.timestamp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Text(
+                text = log.message,
+                style = MaterialTheme.typography.bodySmall
+            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    text = "Status: ${log.status}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = when (log.status) {
+                        com.udptrigger.data.AutomationManager.ExecutionStatus.SUCCESS -> MaterialTheme.colorScheme.primary
+                        com.udptrigger.data.AutomationManager.ExecutionStatus.FAILED -> MaterialTheme.colorScheme.error
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                )
+                if (log.actionsExecuted > 0) {
+                    Text(
+                        text = "Actions: ${log.actionsExecuted}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if (log.durationMs > 0) {
+                    Text(
+                        text = "${log.durationMs}ms",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun formatDate(timestamp: Long): String {
+    val sdf = SimpleDateFormat("MMM dd, HH:mm:ss", Locale.getDefault())
+    return sdf.format(Date(timestamp))
+}
+
+@Composable
+private fun VariablesTabContent(
+    variables: Map<String, String>
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = "Automation Variables",
+            style = MaterialTheme.typography.titleSmall
+        )
+
+        if (variables.isEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "No variables set",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                items(variables.keys.toList().size) { index ->
+                    val key = variables.keys.toList()[index]
+                    val value = variables[key] ?: ""
+                    VariableCard(key, value)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun VariableCard(name: String, value: String) {
+    Card(
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = name,
+                    style = MaterialTheme.typography.titleSmall
+                )
+                Text(
+                    text = value,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AutomationEditDialog(
+    onDismiss: () -> Unit,
+    onSave: (com.udptrigger.data.AutomationManager.Automation) -> Unit,
+    context: Context,
+    existingAutomation: com.udptrigger.data.AutomationManager.Automation? = null
+) {
+    var name by remember { mutableStateOf(existingAutomation?.name ?: "") }
+    var description by remember { mutableStateOf(existingAutomation?.description ?: "") }
+    var enabled by remember { mutableStateOf(existingAutomation?.enabled ?: true) }
+    var priority by remember { mutableStateOf(existingAutomation?.priority ?: 0) }
+    var cooldownMs by remember { mutableStateOf(existingAutomation?.cooldownMs?.toString() ?: "0") }
+
+    var selectedTriggerType by remember { mutableStateOf("Packet Received") }
+    var showTriggerConfig by remember { mutableStateOf(false) }
+
+    var actions by remember { mutableStateOf(existingAutomation?.actions?.toMutableList() ?: mutableListOf()) }
+    var showActionPicker by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (existingAutomation != null) "Edit Automation" else "New Automation") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 500.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Basic info
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    label = { Text("Description") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = priority.toString(),
+                        onValueChange = { priority = it.toIntOrNull() ?: 0 },
+                        label = { Text("Priority") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = cooldownMs,
+                        onValueChange = { cooldownMs = it },
+                        label = { Text("Cooldown (ms)") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(text = "Enabled", style = MaterialTheme.typography.bodyMedium)
+                    Switch(checked = enabled, onCheckedChange = { enabled = it })
+                }
+
+                // Trigger section
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "Trigger",
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        OutlinedButton(
+                            onClick = { showTriggerConfig = true },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(selectedTriggerType)
+                        }
+                    }
+                }
+
+                // Actions section
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Actions (${actions.size})",
+                                style = MaterialTheme.typography.titleSmall
+                            )
+                            Button(onClick = { showActionPicker = true }) {
+                                Icon(Icons.Default.Add, contentDescription = null)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Add")
+                            }
+                        }
+
+                        if (actions.isEmpty()) {
+                            Text(
+                                text = "No actions added",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            actions.forEachIndexed { index, action ->
+                                ActionItemCard(
+                                    action = action,
+                                    onRemove = { actions.removeAt(index) }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val trigger = com.udptrigger.data.AutomationManager.TriggerCondition.PacketReceived(
+                        pattern = ".*"
+                    )
+                    val automation = com.udptrigger.data.AutomationManager.Automation(
+                        id = existingAutomation?.id ?: java.util.UUID.randomUUID().toString(),
+                        name = name,
+                        description = description,
+                        trigger = trigger,
+                        actions = actions,
+                        enabled = enabled,
+                        priority = priority,
+                        cooldownMs = cooldownMs.toLongOrNull() ?: 0,
+                        lastExecuted = existingAutomation?.lastExecuted ?: 0,
+                        executionCount = existingAutomation?.executionCount ?: 0,
+                        createdAt = existingAutomation?.createdAt ?: System.currentTimeMillis(),
+                        updatedAt = System.currentTimeMillis()
+                    )
+                    onSave(automation)
+                },
+                enabled = name.isNotEmpty()
+            ) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+
+    // Trigger configuration dialog
+    if (showTriggerConfig) {
+        TriggerConfigDialog(
+            onDismiss = { showTriggerConfig = false },
+            onTriggerSelected = { triggerType ->
+                selectedTriggerType = triggerType
+                showTriggerConfig = false
+            }
+        )
+    }
+}
+
+@Composable
+private fun ActionItemCard(
+    action: com.udptrigger.data.AutomationManager.AutomationAction,
+    onRemove: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = getActionDescription(action),
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.weight(1f)
+            )
+            IconButton(onClick = onRemove) {
+                Icon(Icons.Default.Delete, contentDescription = "Remove")
+            }
+        }
+    }
+}
+
+private fun getActionDescription(action: com.udptrigger.data.AutomationManager.AutomationAction): String {
+    return when (action) {
+        is com.udptrigger.data.AutomationManager.AutomationAction.SendUdp ->
+            "Send UDP to ${action.host}:${action.port}"
+        is com.udptrigger.data.AutomationManager.AutomationAction.SendTcp ->
+            "Send TCP to ${action.host}:${action.port}"
+        is com.udptrigger.data.AutomationManager.AutomationAction.Delay ->
+            "Delay ${action.durationMs}ms"
+        is com.udptrigger.data.AutomationManager.AutomationAction.SetVariable ->
+            "Set ${action.name} = ${action.value}"
+        is com.udptrigger.data.AutomationManager.AutomationAction.IncrementVariable ->
+            "Increment ${action.name} by ${action.by}"
+        is com.udptrigger.data.AutomationManager.AutomationAction.ShowNotification ->
+            "Notify: ${action.title}"
+        is com.udptrigger.data.AutomationManager.AutomationAction.Log ->
+            "Log: ${action.message}"
+        else -> action::class.simpleName ?: "Unknown Action"
+    }
+}
+
+@Composable
+private fun TriggerConfigDialog(
+    onDismiss: () -> Unit,
+    onTriggerSelected: (String) -> Unit
+) {
+    val triggers = listOf(
+        "Packet Received",
+        "Button Pressed",
+        "Interval",
+        "Gesture",
+        "Time Range",
+        "Network State",
+        "Variable Changed"
+    )
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Select Trigger Type") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 400.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                triggers.forEach { trigger ->
+                    OutlinedButton(
+                        onClick = {
+                            onTriggerSelected(trigger)
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(trigger)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
             }
         }
     )

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+   Full Backup Content Rules for Android 11 and earlier.
+   This file controls what app data is included in:
+   - Full device backup (adb backup)
+   - Google Drive cloud backup
+-->
+<full-backup-content>
+    <!-- Include all shared preferences -->
+    <include domain="sharedpref" path="." />
+
+    <!-- Include DataStore files -->
+    <include domain="file" path="datastore/" />
+
+    <!-- Include databases if any -->
+    <include domain="database" path="." />
+
+    <!-- Exclude cache directory -->
+    <exclude domain="cache" path="." />
+
+    <!-- Exclude no_backup directory -->
+    <exclude domain="no_backup" path="." />
+
+    <!-- Exclude crash reports and logs -->
+    <exclude domain="file" path="crashes/" />
+    <exclude domain="file" path="logs/" />
+</full-backup-content>

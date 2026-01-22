@@ -3,8 +3,11 @@ package com.udptrigger.domain
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
+import java.net.MulticastSocket
+import java.net.NetworkInterface
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -68,10 +71,138 @@ class UdpClient {
     }
 
     /**
+     * Initialize the UDP socket in multicast mode.
+     * @param multicastAddress Multicast group address (e.g., 230.0.0.1)
+     * @param port Multicast port
+     * @param ttl Time-to-live for multicast packets (0-255, default 1 for local network)
+     */
+    suspend fun initializeMulticast(multicastAddress: String, port: Int, ttl: Int = 1): Result<Unit> {
+        return mutex.withLock {
+            try {
+                targetAddress = InetAddress.getByName(multicastAddress)
+                targetPort = port
+
+                // Verify this is a multicast address
+                if (!targetAddress!!.isMulticastAddress) {
+                    return@withLock Result.failure(IllegalArgumentException("Address $multicastAddress is not a multicast address"))
+                }
+
+                // Create MulticastSocket for multicast support
+                val multicastSocket = MulticastSocket(port).apply {
+                    // Set TTL for multicast
+                    timeToLive = ttl.coerceIn(0, 255)
+
+                    // Enable multicast loopback for local testing (false = enabled, true = disabled)
+                    loopbackMode = false
+                }
+                socket = multicastSocket
+                Result.success(Unit)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    /**
+     * Join a multicast group (for receiving multicast packets)
+     * @param multicastAddress Multicast group address to join
+     * @param bindAddress Interface address to join on (null for default)
+     */
+    suspend fun joinMulticastGroup(multicastAddress: String, bindAddress: InetAddress? = null): Result<Unit> {
+        return mutex.withLock {
+            try {
+                val groupAddress = InetAddress.getByName(multicastAddress)
+
+                // Get or create MulticastSocket
+                val multicastSocket = when (val existingSocket = socket) {
+                    is MulticastSocket -> existingSocket
+                    null -> {
+                        MulticastSocket().apply {
+                            reuseAddress = true
+                            receiveBufferSize = 65536
+                        }
+                    }
+                    else -> {
+                        // Close existing non-multicast socket and create new one
+                        existingSocket.close()
+                        MulticastSocket().apply {
+                            reuseAddress = true
+                            receiveBufferSize = 65536
+                        }
+                    }
+                }
+
+                socket = multicastSocket
+
+                // Get the network interface to use
+                val networkInterface = bindAddress?.let {
+                    NetworkInterface.getByInetAddress(it)
+                } ?: run {
+                    // Try to find a suitable interface
+                    val interfaces = NetworkInterface.getNetworkInterfaces().toList()
+                    interfaces.firstOrNull { it.isUp && !it.isLoopback }
+                        ?: interfaces.firstOrNull()
+                }
+
+                if (networkInterface != null) {
+                    multicastSocket.joinGroup(groupAddress)
+                } else {
+                    // Fallback: join without specifying interface
+                    multicastSocket.joinGroup(groupAddress)
+                }
+
+                Result.success(Unit)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    /**
+     * Leave a multicast group
+     */
+    suspend fun leaveMulticastGroup(multicastAddress: String): Result<Unit> {
+        return mutex.withLock {
+            try {
+                val groupAddress = InetAddress.getByName(multicastAddress)
+
+                try {
+                    (socket as? java.net.MulticastSocket)?.leaveGroup(groupAddress)
+                } catch (e: Exception) {
+                    // Ignore if not a MulticastSocket
+                }
+
+                Result.success(Unit)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    /**
+     * Send to multicast group
+     */
+    suspend fun sendMulticast(data: ByteArray): Result<Unit> {
+        return mutex.withLock {
+            try {
+                val address = targetAddress ?: return@withLock Result.failure(IllegalStateException("Multicast not initialized"))
+                val sock = socket ?: return@withLock Result.failure(IllegalStateException("UDP socket not created"))
+
+                val packet = DatagramPacket(data, data.size, address, targetPort)
+                sock.send(packet)
+                Result.success(Unit)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    /**
      * Initialize the UDP socket with target destination.
      * Pre-resolving the address to minimize latency on send.
      * @param host Target hostname or IP address (supports 255.255.255.255 for broadcast)
      * @param port Target UDP port
+     * @param qosDscp DSCP value for Quality of Service (0-63, default 0 = IPTOS_LOWDELAY)
      */
     suspend fun initialize(host: String, port: Int) {
         mutex.withLock {
@@ -246,6 +377,88 @@ class UdpClient {
                 Result.failure(e)
             }
         }
+    }
+
+    /**
+     * Send a UDP packet to multiple targets.
+     * @param data Packet data to send
+     * @param targets List of (address, port) pairs
+     * @param delayMs Delay between sends for sequential mode (0 for parallel)
+     * @return List of results for each target
+     */
+    suspend fun sendToMultiple(
+        data: ByteArray,
+        targets: List<Pair<InetAddress, Int>>,
+        delayMs: Long = 0
+    ): List<Result<Unit>> {
+        val results = mutableListOf<Result<Unit>>()
+
+        if (delayMs > 0) {
+            // Sequential sending with delay
+            for ((address, port) in targets) {
+                val result = mutex.withLock {
+                    try {
+                        val sock = socket ?: return@withLock Result.failure(IllegalStateException("UDP socket not created"))
+                        val packet = DatagramPacket(data, data.size, address, port)
+                        sock.send(packet)
+                        Result.success(Unit)
+                    } catch (e: Exception) {
+                        Result.failure(e)
+                    }
+                }
+                results.add(result)
+                if (targets.indexOf(Pair(address, port)) < targets.size - 1) {
+                    kotlinx.coroutines.delay(delayMs)
+                }
+            }
+        } else {
+            // Parallel sending
+            val jobs = targets.map { (address, port) ->
+                kotlinx.coroutines.CoroutineScope(Dispatchers.IO).async {
+                    mutex.withLock {
+                        try {
+                            val sock = socket ?: return@async Result.failure<Unit>(IllegalStateException("UDP socket not created"))
+                            val packet = DatagramPacket(data, data.size, address, port)
+                            sock.send(packet)
+                            Result.success(Unit)
+                        } catch (e: Exception) {
+                            Result.failure(e)
+                        }
+                    }
+                }
+            }
+            results.addAll(jobs.map { it.await() })
+        }
+
+        return results
+    }
+
+    /**
+     * FAST-PATH send to multiple targets.
+     * This bypasses the mutex and coroutine overhead for the critical trigger path.
+     * @param data Packet data to send
+     * @param targets List of (address, port) pairs
+     * @return Map of target string to send result timestamp (or -1 if failed)
+     */
+    fun sendFastMultiple(
+        data: ByteArray,
+        targets: List<Pair<InetAddress, Int>>
+    ): Map<String, Long> {
+        val results = mutableMapOf<String, Long>()
+        val sock = socket ?: return emptyMap()
+
+        for ((address, port) in targets) {
+            val targetKey = "${address.hostAddress}:$port"
+            try {
+                val packet = DatagramPacket(data, data.size, address, port)
+                sock.send(packet)
+                results[targetKey] = System.nanoTime()
+            } catch (e: Exception) {
+                results[targetKey] = -1L
+            }
+        }
+
+        return results
     }
 
     /**

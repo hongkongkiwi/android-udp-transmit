@@ -68,8 +68,9 @@ fun updateWidgetConnectionState(context: Context, isConnected: Boolean) {
 }
 
 /**
- * Simple Glance App Widget that shows connection status and opens app on tap
- * When tapped, opens the app with TRIGGER_UDP action which auto-triggers if connected
+ * Simple Glance App Widget that shows connection status and triggers instantly
+ * When tapped, sends a broadcast to WidgetTriggerReceiver which sends the UDP packet
+ * immediately without opening the app.
  */
 class TriggerGlanceWidget : GlanceAppWidget() {
 
@@ -91,12 +92,6 @@ class TriggerGlanceWidget : GlanceAppWidget() {
             ColorProvider(0xFF1A73E8.toInt()) // Blue
         }
 
-        // Intent to open app with trigger action
-        val appIntent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-            action = ACTION_TRIGGER_UDP
-        }
-
         provideContent {
             Column(
                 modifier = GlanceModifier
@@ -106,7 +101,7 @@ class TriggerGlanceWidget : GlanceAppWidget() {
                 horizontalAlignment = Alignment.Horizontal.CenterHorizontally,
                 verticalAlignment = Alignment.Vertical.CenterVertically
             ) {
-                // Status
+                // Status text
                 Text(
                     text = statusText,
                     style = TextStyle(
@@ -118,10 +113,14 @@ class TriggerGlanceWidget : GlanceAppWidget() {
 
                 Spacer(modifier = GlanceModifier.defaultWeight())
 
-                // Trigger button using Button composable with action
+                // Trigger button - sends broadcast for instant trigger via invisible activity
                 androidx.glance.Button(
-                    text = "Tap to Trigger",
-                    onClick = actionStartActivity(appIntent)
+                    text = "Trigger",
+                    onClick = actionStartActivity(
+                        Intent(context, WidgetTriggerActivity::class.java).apply {
+                            action = WidgetTriggerActivity.ACTION_WIDGET_TRIGGER
+                        }
+                    )
                 )
             }
         }

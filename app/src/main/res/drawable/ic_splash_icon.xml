@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Background circle -->
+    <path
+        android:fillColor="#6750A4"
+        android:pathData="M54,54m-54,0a54,54 0,1 1,108 0a54,54 0,1 1,-108 0"/>
+
+    <!-- UDP text stylized as network pulse -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M30,54 L42,54 L42,42 L30,42 Z"/>
+
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M42,54 L66,54 L66,42 L42,42 Z"/>
+
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M66,54 L78,54 L78,42 L66,42 Z"/>
+
+    <!-- Signal waves -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.8"
+        android:pathData="M42,60 Q54,48 66,60"
+        android:strokeWidth="3"
+        android:strokeColor="#FFFFFF"/>
+
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.5"
+        android:pathData="M38,64 Q54,48 70,64"
+        android:strokeWidth="2"
+        android:strokeColor="#FFFFFF"/>
+
+    <!-- Arrow pointing right (transmit) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M66,60 L78,54 L66,48 Z"/>
+</vector>
