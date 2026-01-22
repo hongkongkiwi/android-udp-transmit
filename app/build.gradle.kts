@@ -4,6 +4,31 @@ plugins {
     id("org.jetbrains.kotlin.plugin.serialization")
 }
 
+// Git-based versioning
+fun getGitVersion(): String {
+    try {
+        val process = ProcessBuilder("git", "describe", "--tags", "--abbrev=0")
+            .directory(rootProject.projectDir)
+            .start()
+        val version = process.inputStream.bufferedReader().readText().trim()
+        return version.removePrefix("v")
+    } catch (e: Exception) {
+        return "1.0.0"
+    }
+}
+
+fun getGitCommitCount(): Int {
+    try {
+        val process = ProcessBuilder("git", "rev-list", "--count", "HEAD")
+            .directory(rootProject.projectDir)
+            .start()
+        val count = process.inputStream.bufferedReader().readText().trim().toIntOrNull()
+        return count ?: 1
+    } catch (e: Exception) {
+        return 1
+    }
+}
+
 android {
     namespace = "com.udptrigger"
     compileSdk = 34
@@ -12,8 +37,8 @@ android {
         applicationId = "com.udptrigger"
         minSdk = 24
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = getGitCommitCount()
+        versionName = getGitVersion()
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
