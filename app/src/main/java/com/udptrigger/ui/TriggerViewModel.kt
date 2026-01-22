@@ -7,6 +7,7 @@ import android.os.Vibrator
 import android.os.VibratorManager
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.udptrigger.R
 import com.udptrigger.data.SettingsDataStore
 import com.udptrigger.data.UdpConfig
 import com.udptrigger.domain.UdpClient
@@ -15,15 +16,34 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
+/**
+ * Validation result for configuration input
+ */
+sealed class ValidationResult {
+    data object Valid : ValidationResult()
+    data class Invalid(val message: String) : ValidationResult()
+}
+
+/**
+ * Main UI state for the trigger screen
+ */
 data class TriggerState(
     val isConnected: Boolean = false,
+    val isConnecting: Boolean = false,
+    val isDisconnecting: Boolean = false,
     val lastTriggerTime: Long? = null,
     val lastTimestamp: Long? = null,
     val error: String? = null,
     val config: UdpConfig = UdpConfig(),
+    val portError: String? = null,
+    val hostError: String? = null,
     val lastSendLatencyMs: Double = 0.0,
-    val averageLatencyMs: Double = 0.0
+    val averageLatencyMs: Double = 0.0,
+    val packetsSent: Int = 0,
+    val packetsFailed: Int = 0
 )
 
 class TriggerViewModel(
@@ -40,6 +60,9 @@ class TriggerViewModel(
     // Latency tracking
     private var latencySumMs: Double = 0.0
     private var latencyCount: Int = 0
+
+    // Mutex to prevent concurrent connect/disconnect operations
+    private val connectionMutex = Mutex()
 
     private val vibrator: Vibrator? by lazy {
         when {
@@ -60,14 +83,73 @@ class TriggerViewModel(
                 _state.value = _state.value.copy(config = savedConfig)
             } catch (e: Exception) {
                 // Use default config if loading fails
+                _state.value = _state.value.copy(
+                    error = context.getString(R.string.restore_failed, e.message)
+                )
             }
         }
     }
 
+    /**
+     * Validate port number
+     */
+    fun validatePort(port: String): ValidationResult {
+        val portInt = port.toIntOrNull()
+        return when {
+            port.isBlank() -> ValidationResult.Invalid(context.getString(R.string.error_invalid_port))
+            portInt == null -> ValidationResult.Invalid(context.getString(R.string.error_invalid_port))
+            portInt < 1 || portInt > 65535 -> ValidationResult.Invalid(context.getString(R.string.error_invalid_port))
+            else -> ValidationResult.Valid
+        }
+    }
+
+    /**
+     * Validate host IP address
+     */
+    fun validateHost(host: String): ValidationResult {
+        return when {
+            host.isBlank() -> ValidationResult.Invalid(context.getString(R.string.error_invalid_ip))
+            isValidIpAddress(host) -> ValidationResult.Valid
+            else -> ValidationResult.Invalid(context.getString(R.string.error_invalid_ip))
+        }
+    }
+
+    private fun isValidIpAddress(host: String): Boolean {
+        val ipPattern = Regex("^((25[0-5]|(2[0-4]|1\\d|[1-9]|)\\d)\\.?\\b){4}$")
+        return ipPattern.matches(host) || host == "localhost" || host.startsWith("192.168.") ||
+                host.startsWith("10.") || host.startsWith("172.")
+    }
+
+    /**
+     * Update configuration with validation
+     */
     fun updateConfig(config: UdpConfig) {
-        _state.value = _state.value.copy(config = config)
+        // Validate port
+        val portError = when (val result = validatePort(config.port.toString())) {
+            is ValidationResult.Invalid -> result.message
+            else -> null
+        }
+
+        // Validate host
+        val hostError = when (val result = validateHost(config.host)) {
+            is ValidationResult.Invalid -> result.message
+            else -> null
+        }
+
+        _state.value = _state.value.copy(
+            config = config,
+            portError = portError,
+            hostError = hostError
+        )
+
         viewModelScope.launch {
-            dataStore.saveConfig(config)
+            try {
+                dataStore.saveConfig(config)
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(
+                    error = context.getString(R.string.error_send_failed, e.message)
+                )
+            }
         }
     }
 
@@ -98,6 +180,13 @@ class TriggerViewModel(
      * Standard trigger (for button tap).
      */
     fun trigger() {
+        if (!_state.value.isConnected) {
+            _state.value = _state.value.copy(
+                error = context.getString(R.string.error_not_connected)
+            )
+            return
+        }
+
         viewModelScope.launch {
             val timestamp = System.nanoTime()
             lastTriggerNanoTime = timestamp
@@ -113,12 +202,14 @@ class TriggerViewModel(
                         lastTimestamp = timestamp,
                         lastSendLatencyMs = latencyMs,
                         averageLatencyMs = if (latencyCount > 0) latencySumMs / latencyCount else 0.0,
+                        packetsSent = _state.value.packetsSent + 1,
                         error = null
                     )
                 },
                 onFailure = { e ->
                     _state.value = _state.value.copy(
-                        error = "Send failed: ${e.message}"
+                        error = context.getString(R.string.error_send_failed, e.message),
+                        packetsFailed = _state.value.packetsFailed + 1
                     )
                 }
             )
@@ -174,10 +265,14 @@ class TriggerViewModel(
                     lastTimestamp = timestamp,
                     lastSendLatencyMs = latencyMs,
                     averageLatencyMs = if (latencyCount > 0) latencySumMs / latencyCount else 0.0,
+                    packetsSent = _state.value.packetsSent + 1,
                     error = null
                 )
             } else {
-                _state.value = _state.value.copy(error = "Send failed")
+                _state.value = _state.value.copy(
+                    error = context.getString(R.string.error_send_failed, "Unknown error"),
+                    packetsFailed = _state.value.packetsFailed + 1
+                )
             }
         }
 
@@ -191,38 +286,93 @@ class TriggerViewModel(
         }
     }
 
+    /**
+     * Clear the current error message
+     */
     fun clearError() {
         _state.value = _state.value.copy(error = null)
     }
 
+    /**
+     * Clear validation errors
+     */
+    fun clearValidationErrors() {
+        _state.value = _state.value.copy(
+            portError = null,
+            hostError = null
+        )
+    }
+
+    /**
+     * Connect to the configured host and port
+     */
     fun connect() {
-        if (_state.value.isConnected) return
+        if (_state.value.isConnected || _state.value.isConnecting) return
+
+        // Validate before connecting
+        val config = _state.value.config
+        val portValidation = validatePort(config.port.toString())
+        val hostValidation = validateHost(config.host)
+
+        if (portValidation is ValidationResult.Invalid) {
+            _state.value = _state.value.copy(portError = portValidation.message)
+            return
+        }
+
+        if (hostValidation is ValidationResult.Invalid) {
+            _state.value = _state.value.copy(hostError = hostValidation.message)
+            return
+        }
 
         viewModelScope.launch {
-            val config = _state.value.config
-            try {
-                udpClient.initialize(config.host, config.port)
-                _state.value = _state.value.copy(
-                    isConnected = true,
-                    error = null
-                )
-            } catch (e: Exception) {
-                _state.value = _state.value.copy(
-                    error = "Connection failed: ${e.message}"
-                )
+            connectionMutex.withLock {
+                _state.value = _state.value.copy(isConnecting = true, error = null)
+
+                try {
+                    udpClient.initialize(config.host, config.port)
+                    // Reset latency tracking on new connection
+                    latencySumMs = 0.0
+                    latencyCount = 0
+                    _state.value = _state.value.copy(
+                        isConnected = true,
+                        isConnecting = false,
+                        error = null
+                    )
+                } catch (e: Exception) {
+                    _state.value = _state.value.copy(
+                        isConnected = false,
+                        isConnecting = false,
+                        error = context.getString(R.string.error_connection_failed, e.message ?: "Unknown error")
+                    )
+                }
             }
         }
     }
 
+    /**
+     * Disconnect from the current host
+     */
     fun disconnect() {
-        if (!_state.value.isConnected) return
+        if (!_state.value.isConnected || _state.value.isDisconnecting) return
 
         viewModelScope.launch {
-            udpClient.close()
-            _state.value = _state.value.copy(
-                isConnected = false,
-                error = null
-            )
+            connectionMutex.withLock {
+                _state.value = _state.value.copy(isDisconnecting = true)
+
+                try {
+                    udpClient.close()
+                    _state.value = _state.value.copy(
+                        isConnected = false,
+                        isDisconnecting = false,
+                        error = null
+                    )
+                } catch (e: Exception) {
+                    _state.value = _state.value.copy(
+                        isDisconnecting = false,
+                        error = context.getString(R.string.error_send_failed, e.message ?: "Unknown error")
+                    )
+                }
+            }
         }
     }
 

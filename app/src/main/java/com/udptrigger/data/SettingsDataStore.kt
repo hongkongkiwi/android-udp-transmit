@@ -20,6 +20,8 @@ class SettingsDataStore(private val context: Context) {
         val PORT = intPreferencesKey("port")
         val PACKET_CONTENT = stringPreferencesKey("packet_content")
         val INCLUDE_TIMESTAMP = booleanPreferencesKey("include_timestamp")
+        val HAPTIC_ENABLED = booleanPreferencesKey("haptic_enabled")
+        val RATE_LIMIT_MS = intPreferencesKey("rate_limit_ms")
     }
 
     val configFlow: Flow<UdpConfig> = context.dataStore.data.map { preferences ->
@@ -31,12 +33,32 @@ class SettingsDataStore(private val context: Context) {
         )
     }
 
+    val hapticEnabledFlow: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.HAPTIC_ENABLED] ?: true
+    }
+
+    val rateLimitMsFlow: Flow<Int> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.RATE_LIMIT_MS] ?: 100
+    }
+
     suspend fun saveConfig(config: UdpConfig) {
         context.dataStore.edit { preferences ->
             preferences[PreferencesKeys.HOST] = config.host
             preferences[PreferencesKeys.PORT] = config.port
             preferences[PreferencesKeys.PACKET_CONTENT] = config.packetContent
             preferences[PreferencesKeys.INCLUDE_TIMESTAMP] = config.includeTimestamp
+        }
+    }
+
+    suspend fun setHapticEnabled(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.HAPTIC_ENABLED] = enabled
+        }
+    }
+
+    suspend fun setRateLimitMs(ms: Int) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.RATE_LIMIT_MS] = ms
         }
     }
 }
