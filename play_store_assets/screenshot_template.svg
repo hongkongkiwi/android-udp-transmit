@@ -1,0 +1,98 @@
+<svg width="1080" height="1920" xmlns="http://www.w3.org/2000/svg">
+  <!-- Phone frame mockup -->
+  <rect width="1080" height="1920" fill="#E8DEF8"/>
+
+  <!-- Status bar -->
+  <rect width="1080" height="64" fill="#6750A4"/>
+  <circle cx="60" cy="32" r="12" fill="#FFFFFF"/>
+  <rect x="90" y="28" width="200" height="8" rx="4" fill="#FFFFFF"/>
+  <rect x="950" y="24" width="16" height="16" rx="2" fill="#FFFFFF"/>
+  <rect x="980" y="26" width="16" height="12" rx="2" fill="#FFFFFF"/>
+
+  <!-- App header -->
+  <rect y="64" width="1080" height="120" fill="#EADDFF"/>
+  <text x="40" y="140" font-family="sans-serif" font-size="40" fill="#1C1B1F" font-weight="bold">UDP Trigger</text>
+
+  <!-- Main content area - Config section -->
+  <rect y="184" width="1080" height="300" fill="#FFFFFF"/>
+  <text x="40" y="230" font-family="sans-serif" font-size="28" fill="#1C1B1F">Host Configuration</text>
+  <rect x="40" y="250" width="1000" height="60" rx="8" fill="#E8DEF8"/>
+  <text x="60" y="290" font-family="sans-serif" font-size="24" fill="#49454F">192.168.1.100</text>
+  <rect x="40" y="320" width="480" height="60" rx="8" fill="#E8DEF8"/>
+  <text x="60" y="360" font-family="sans-serif" font-size="24" fill="#49454F">5000</text>
+
+  <!-- Connect button -->
+  <rect x="40" y="400" width="300" height="60" rx="30" fill="#6750A4"/>
+  <text x="190" y="440" font-family="sans-serif" font-size="24" fill="#FFFFFF" text-anchor="middle">Connect</text>
+
+  <!-- Status indicator -->
+  <circle cx="900" cy="430" r="12" fill="#4CAF50"/>
+  <text x="925" y="440" font-family="sans-serif" font-size="20" fill="#4CAF50">Connected</text>
+
+  <!-- Send button -->
+  <rect y="500" width="1080" height="100" fill="#6750A4"/>
+  <text x="540" y="565" font-family="sans-serif" font-size="36" fill="#FFFFFF" text-anchor="middle">SEND UDP</text>
+
+  <!-- Recent packets -->
+  <rect y="620" width="1080" height="400" fill="#FFFFFF"/>
+  <text x="40" y="670" font-family="sans-serif" font-size="28" fill="#1C1B1F">Recent Packets</text>
+
+  <!-- Packet entries -->
+  <rect x="40" y="700" width="1000" height="60" rx="8" fill="#F3EDF7"/>
+  <text x="60" y="740" font-family="sans-serif" font-size="20" fill="#49454F">192.168.1.100:5000 • TRIGGER • 123ms ago</text>
+
+  <rect x="40" y="770" width="1000" height="60" rx="8" fill="#F3EDF7"/>
+  <text x="60" y="810" font-family="sans-serif" font-size="20" fill="#49454F">192.168.1.100:5000 • DATA • 456ms ago</text>
+
+  <rect x="40" y="840" width="1000" height="60" rx="8" fill="#F3EDF7"/>
+  <text x="60" y="880" font-family="sans-serif" font-size="20" fill="#49454F">192.168.1.100:5000 • PING • 789ms ago</text>
+
+  <!-- Settings panel -->
+  <rect y="1040" width="1080" height="400" fill="#FFFFFF"/>
+  <text x="40" y="1090" font-family="sans-serif" font-size="28" fill="#1C1B1F">Settings</text>
+
+  <!-- Settings entries -->
+  <rect x="40" y="1120" width="1000" height="50" rx="8" fill="#E8DEF8"/>
+  <text x="60" y="1155" font-family="sans-serif" font-size="20" fill="#49454F">Sound Effects</text>
+  <circle cx="980" cy="1145" r="16" fill="#6750A4"/>
+
+  <rect x="40" y="1180" width="1000" height="50" rx="8" fill="#E8DEF8"/>
+  <text x="60" y="1215" font-family="sans-serif" font-size="20" fill="#49454F">Haptic Feedback</text>
+  <circle cx="980" cy="1205" r="16" fill="#6750A4"/>
+
+  <rect x="40" y="1240" width="1000" height="50" rx="8" fill="#E8DEF8"/>
+  <text x="60" y="1275" font-family="sans-serif" font-size="20" fill="#49454F">Auto Reconnect</text>
+  <rect x="950" y="1255" width="40" height="20" rx="10" fill="#6750A4"/>
+
+  <rect x="40" y="1300" width="1000" height="50" rx="8" fill="#E8DEF8"/>
+  <text x="60" y="1335" font-family="sans-serif" font-size="20" fill="#49454F">Background Service</text>
+  <rect x="950" y="1315" width="40" height="20" rx="10" fill="#6750A4"/>
+
+  <!-- Navigation bar -->
+  <rect y="1480" width="1080" height="440" fill="#6750A4"/>
+
+  <!-- Nav items -->
+  <circle cx="135" cy="1640" r="24" fill="#EADDFF"/>
+  <text x="135" y="1750" font-family="sans-serif" font-size="14" fill="#FFFFFF" text-anchor="middle">Trigger</text>
+
+  <circle cx="270" cy="1640" r="24" fill="#FFFFFF" opacity="0.6"/>
+  <text x="270" y="1750" font-family="sans-serif" font-size="14" fill="#FFFFFF" text-anchor="middle">History</text>
+
+  <circle cx="405" cy="1640" r="24" fill="#FFFFFF" opacity="0.6"/>
+  <text x="405" y="1750" font-family="sans-serif" font-size="14" fill="#FFFFFF" text-anchor="middle">Settings</text>
+
+  <circle cx="540" cy="1640" r="24" fill="#FFFFFF" opacity="0.6"/>
+  <text x="540" y="1750" font-family="sans-serif" font-size="14" fill="#FFFFFF" text-anchor="middle">Macros</text>
+
+  <circle cx="675" cy="1640" r="24" fill="#FFFFFF" opacity="0.6"/>
+  <text x="675" y="1750" font-family="sans-serif" font-size="14" fill="#FFFFFF" text-anchor="middle">Auto</text>
+
+  <circle cx="810" cy="1640" r="24" fill="#FFFFFF" opacity="0.6"/>
+  <text x="810" y="1750" font-family="sans-serif" font-size="14" fill="#FFFFFF" text-anchor="middle">Widgets</text>
+
+  <circle cx="945" cy="1640" r="24" fill="#FFFFFF" opacity="0.6"/>
+  <text x="945" y="1750" font-family="sans-serif" font-size="14" fill="#FFFFFF" text-anchor="middle">About</text>
+
+  <!-- Home indicator -->
+  <rect x="450" y="1880" width="180" height="5" rx="2.5" fill="#FFFFFF"/>
+</svg>

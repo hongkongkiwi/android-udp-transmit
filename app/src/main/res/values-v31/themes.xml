@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Base application theme for Android 12+ -->
+    <style name="Theme.UdpTrigger" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
+
+    <!-- Splash screen theme for Android 12+ with proper splash screen attributes -->
+    <style name="Theme.UdpTrigger.Splash" parent="Theme.UdpTrigger">
+        <!-- Splash screen background (uses theme background on Android 12+) -->
+        <item name="android:windowBackground">@drawable/splash_background</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+
+        <!-- Android 12+ splash screen attributes -->
+        <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+        <item name="android:windowSplashScreenBackground">@color/splash_screen_background</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">@color/splash_screen_icon_background</item>
+
+        <!-- Splash screen animation duration (in milliseconds) -->
+        <!-- 0 means use system default, positive value forces custom duration -->
+        <item name="android:windowSplashScreenAnimationDuration">0</item>
+    </style>
+</resources>

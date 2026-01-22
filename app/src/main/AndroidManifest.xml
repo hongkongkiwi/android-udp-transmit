@@ -43,6 +43,13 @@
     <!-- Notification permission for Android 13+ -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Custom signature permission for secure broadcast access -->
+    <permission
+        android:name="com.udptrigger.SEND_UDP_PACKETS"
+        android:protectionLevel="signature"
+        android:label="@string/permission_send_udp_label"
+        android:description="@string/permission_send_udp_description" />
+
     <application
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -153,6 +160,7 @@
         <!-- Automation Integration Receiver (Tasker, MacroDroid, etc.) -->
         <receiver
             android:name=".receiver.UdpIntentReceiver"
+            android:permission="com.udptrigger.SEND_UDP_PACKETS"
             android:enabled="true"
             android:exported="true">
             <intent-filter>

@@ -1,0 +1,27 @@
+<svg width="512" height="512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#6750A4;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#4F378B;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="512" height="512" fill="url(#grad)" rx="80"/>
+
+  <!-- Icon symbol - Network/UDP representation -->
+  <g transform="translate(256,256)">
+    <!-- Outer circle -->
+    <circle r="120" fill="none" stroke="#FFFFFF" stroke-width="12"/>
+
+    <!-- UDP packet representation -->
+    <path d="M-60,-40 L60,40 M-60,40 L60,-40" stroke="#FFFFFF" stroke-width="12" stroke-linecap="round"/>
+
+    <!-- Signal waves -->
+    <path d="M90,-90 Q120,-90 150,-90" fill="none" stroke="#EADDFF" stroke-width="8" stroke-linecap="round"/>
+    <path d="M100,-110 Q150,-110 200,-110" fill="none" stroke="#EADDFF" stroke-width="8" stroke-linecap="round"/>
+  </g>
+
+  <!-- Safe zone reference (invisible, for design reference) -->
+  <circle cx="256" cy="256" r="196" fill="none" stroke="#000000" stroke-opacity="0.1" stroke-width="2"/>
+</svg>

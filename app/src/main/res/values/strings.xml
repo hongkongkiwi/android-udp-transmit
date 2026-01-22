@@ -4,6 +4,10 @@
     <string name="app_name">UDP Trigger</string>
     <string name="trigger_ready">Press any key to trigger UDP</string>
 
+    <!-- Permissions -->
+    <string name="permission_send_udp_label">Send UDP Packets</string>
+    <string name="permission_send_udp_description">Allows sending UDP packets through the app. Only granted to apps signed by the same developer.</string>
+
     <!-- Status Messages -->
     <string name="sending">Sending UDP packet…</string>
     <string name="sent">Packet sent!</string>
